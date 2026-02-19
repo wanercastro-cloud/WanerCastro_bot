@@ -1,13 +1,24 @@
-from telegram.ext import Application, CommandHandler
 import os
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 TOKEN = os.getenv("TG_BOT_TOKEN")
 
-async def start(update, context):
-    await update.message.reply_text("Bot online 🚀")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("✅ Bot online! Envie qualquer mensagem.")
 
-app = Application.builder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"Você disse: {update.message.text}")
 
-print("Bot iniciado")
-app.run_polling()
+def main():
+    if not TOKEN:
+        raise RuntimeError("TG_BOT_TOKEN não definido nas variáveis do Railway")
+
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
