@@ -14,7 +14,7 @@ TOKEN = os.getenv("TG_BOT_TOKEN", "").strip()
 BYBIT_TICKERS_URL = "https://api.bybit.com/v5/market/tickers"
 TELEGRAM_MAX = 4096
 
-# Cache simples por instância
+# Cache simples
 CACHE_TTL = 60  # segundos
 _cache_topspot_text: str | None = None
 _cache_topspot_ts: float = 0.0
@@ -29,70 +29,65 @@ def safe_float(x, default=0.0) -> float:
         return default
 
 
-def _fetch_spot_tickers_sync() -> list[dict]:
-    r = requests.get(
-        BYBIT_TICKERS_URL,
-        params={"category": "spot"},
-        timeout=8,
-        headers={"User-Agent": "Mozilla/5.0"},
-    )
-    r.raise_for_status()
-    data = r.json()
+def _bybit_get_spot_tickers_sync() -> tuple[int | None, dict | None]:
+    """
+    Retorna (status_code, json_dict) sem levantar HTTPError.
+    """
+    try:
+        r = requests.get(
+            BYBIT_TICKERS_URL,
+            params={"category": "spot"},
+            timeout=10,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json",
+            },
+        )
+        status = r.status_code
 
+        # tenta parsear JSON mesmo em erro (às vezes vem body explicando)
+        try:
+            data = r.json()
+        except Exception:
+            data = None
+
+        return status, data
+
+    except requests.RequestException as e:
+        logging.exception("Falha de rede ao chamar Bybit: %s", e)
+        return None, None
+
+
+def _extract_list(data: dict | None) -> list[dict]:
     if not isinstance(data, dict):
-        logging.error("Bybit retornou JSON não-dict: %s", type(data))
         return []
 
+    # Bybit padrão: retCode 0 = ok
     if data.get("retCode") != 0:
         logging.error("Bybit retCode != 0: %s", data)
         return []
 
     result = data.get("result")
     if not isinstance(result, dict):
-        logging.error("Bybit result inválido: %s", result)
         return []
 
     lst = result.get("list")
-    if not isinstance(lst, list):
-        logging.error("Bybit list inválida: %s", lst)
-        return []
-
-    return lst
+    return lst if isinstance(lst, list) else []
 
 
-async def fetch_spot_tickers() -> list[dict]:
-    # Roda requests em thread para não travar o loop async
-    return await asyncio.to_thread(_fetch_spot_tickers_sync)
-
-
-def _fetch_one_ticker_sync(symbol: str) -> dict | None:
-    r = requests.get(
-        BYBIT_TICKERS_URL,
-        params={"category": "spot", "symbol": symbol},
-        timeout=8,
-        headers={"User-Agent": "Mozilla/5.0"},
-    )
-    r.raise_for_status()
-    data = r.json()
-
-    if not isinstance(data, dict) or data.get("retCode") != 0:
-        return None
-
-    lst = data.get("result", {}).get("list", [])
-    return lst[0] if lst else None
+async def fetch_spot_tickers() -> tuple[int | None, list[dict]]:
+    status, data = await asyncio.to_thread(_bybit_get_spot_tickers_sync)
+    return status, _extract_list(data)
 
 
 def premium_score(t: dict) -> float:
-    """
-    'À prova de API quebrada' = nunca levanta exceção e nunca retorna NaN/Inf.
-    Critério: liquidez (turnover24h) em USDT, para pares *USDT.
-    """
+    # blindado contra dados ruins
     try:
         symbol = t.get("symbol", "")
         if not isinstance(symbol, str) or not symbol.endswith("USDT"):
             return -1e18
 
-        turnover_raw = t.get("turnover24h", None)
+        turnover_raw = t.get("turnover24h")
         if turnover_raw is None or turnover_raw == "":
             return -1e18
 
@@ -101,15 +96,31 @@ def premium_score(t: dict) -> float:
             return -1e18
 
         score = math.log10(turnover)
-
-        # proteção final contra NaN/Inf
         if not math.isfinite(score):
             return -1e18
 
         return score
-
     except Exception:
         return -1e18
+
+
+def _fetch_one_ticker_sync(symbol: str) -> tuple[int | None, dict | None]:
+    try:
+        r = requests.get(
+            BYBIT_TICKERS_URL,
+            params={"category": "spot", "symbol": symbol},
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+        )
+        status = r.status_code
+        try:
+            data = r.json()
+        except Exception:
+            data = None
+        return status, data
+    except requests.RequestException as e:
+        logging.exception("Falha de rede /price: %s", e)
+        return None, None
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -128,44 +139,83 @@ async def price_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     symbol = context.args[0].upper().replace("/", "").strip()
 
-    try:
-        t = await asyncio.to_thread(_fetch_one_ticker_sync, symbol)
-        if not t:
-            await update.message.reply_text("❌ Par não encontrado na Spot da Bybit.")
-            return
+    status, data = await asyncio.to_thread(_fetch_one_ticker_sync, symbol)
+    if status is None:
+        await update.message.reply_text("⚠️ Sem conexão com a Bybit agora.")
+        return
 
-        last = safe_float(t.get("lastPrice"))
-        chg = safe_float(t.get("price24hPcnt")) * 100.0
-        turnover = safe_float(t.get("turnover24h"))
+    if status != 200:
+        await update.message.reply_text(f"⚠️ Bybit respondeu HTTP {status} no /price.")
+        return
 
-        await update.message.reply_text(
-            f"📌 {symbol} (Bybit Spot)\n"
-            f"💰 Preço: {last}\n"
-            f"📈 24h: {chg:+.2f}%\n"
-            f"🔄 Volume 24h: {turnover:,.0f}"
-        )
+    if not isinstance(data, dict) or data.get("retCode") != 0:
+        await update.message.reply_text("⚠️ Resposta inválida da Bybit no /price.")
+        return
 
-    except Exception as e:
-        logging.exception("Erro no /price")
-        await update.message.reply_text(f"⚠️ Erro ao consultar a Bybit. ({type(e).__name__})")
+    lst = data.get("result", {}).get("list", [])
+    if not lst:
+        await update.message.reply_text("❌ Par não encontrado na Spot da Bybit.")
+        return
+
+    t = lst[0]
+    last = safe_float(t.get("lastPrice"))
+    chg = safe_float(t.get("price24hPcnt")) * 100.0
+    turnover = safe_float(t.get("turnover24h"))
+
+    await update.message.reply_text(
+        f"📌 {symbol} (Bybit Spot)\n"
+        f"💰 Preço: {last}\n"
+        f"📈 24h: {chg:+.2f}%\n"
+        f"🔄 Volume 24h: {turnover:,.0f}"
+    )
 
 
 async def topspot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global _cache_topspot_text, _cache_topspot_ts
 
-    # Cache: se tiver resultado recente, responde instantâneo
+    # cache rápido
     now = time.time()
     if _cache_topspot_text and (now - _cache_topspot_ts) < CACHE_TTL:
         await update.message.reply_text(_cache_topspot_text)
         return
 
-    # Feedback imediato
     status_msg = await update.message.reply_text("⏳ Montando Top Premium Spot...")
 
-    try:
-        tickers = await fetch_spot_tickers()
+    # retry leve (1 vez) só para instabilidade momentânea
+    for attempt in (1, 2):
+        status, tickers = await fetch_spot_tickers()
+
+        # sem conexão
+        if status is None:
+            await status_msg.edit_text("⚠️ Sem conexão com a Bybit agora. Tente novamente.")
+            return
+
+        # rate limit
+        if status == 429:
+            await status_msg.edit_text("⛔ Bybit limitou (HTTP 429). Aguarde 30–60s e tente de novo.")
+            return
+
+        # bloqueio/região/proxy/anti-bot
+        if status == 403:
+            await status_msg.edit_text("⛔ Bybit recusou (HTTP 403). Verifique rede/região/VPN.")
+            return
+
+        # instabilidade temporária
+        if status >= 500:
+            if attempt == 1:
+                await asyncio.sleep(1.2)
+                continue
+            await status_msg.edit_text(f"⚠️ Bybit instável (HTTP {status}). Tente novamente em 1 min.")
+            return
+
+        # outros erros HTTP
+        if status != 200:
+            await status_msg.edit_text(f"⚠️ Bybit respondeu HTTP {status}. Tente novamente.")
+            return
+
+        # OK: monta ranking
         if not tickers:
-            await status_msg.edit_text("⚠️ Bybit não retornou dados agora. Tente novamente.")
+            await status_msg.edit_text("⚠️ Bybit não retornou lista agora.")
             return
 
         scored = []
@@ -179,7 +229,7 @@ async def topspot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        top = scored[:10]  # limita para não estourar mensagem
+        top = scored[:10]
 
         lines = []
         for i, (_, t) in enumerate(top, start=1):
@@ -187,32 +237,20 @@ async def topspot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             last = safe_float(t.get("lastPrice"))
             chg = safe_float(t.get("price24hPcnt")) * 100.0
             turnover = safe_float(t.get("turnover24h"))
-
-            lines.append(
-                f"{i:02d}. {sym} | {last:.8g} | 24h {chg:+.2f}% | vol {turnover:,.0f}"
-            )
+            lines.append(f"{i:02d}. {sym} | {last:.8g} | 24h {chg:+.2f}% | vol {turnover:,.0f}")
 
         text = "🏆 Top Premium Spot (Bybit – Liquidez)\n" + "\n".join(lines)
-
-        # blindagem final do tamanho
         if len(text) > TELEGRAM_MAX:
             text = text[: TELEGRAM_MAX - 50] + "\n..."
 
-        # atualiza cache
         _cache_topspot_text = text
         _cache_topspot_ts = time.time()
 
         await status_msg.edit_text(text)
+        return
 
-    except requests.Timeout as e:
-        logging.exception("Timeout no /topspot")
-        await status_msg.edit_text("⚠️ Bybit demorou demais (timeout). Tente novamente.")
-    except Exception as e:
-        logging.exception("Erro no /topspot")
-        await status_msg.edit_text(
-            "⚠️ Erro ao montar o Top Premium Spot.\n"
-            f"Erro: {type(e).__name__}"
-        )
+    # nunca deve chegar aqui
+    await status_msg.edit_text("⚠️ Falha inesperada no /topspot.")
 
 
 def main():
