@@ -1,15 +1,10 @@
 import os
 import asyncio
 import logging
-
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# Log básico para aparecer bonito no Railway (Logs)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
+logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("TG_BOT_TOKEN")
 
@@ -18,13 +13,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def main():
     if not TOKEN:
-        raise RuntimeError("❌ TG_BOT_TOKEN não definido nas Variables do Railway")
+        raise RuntimeError("TG_BOT_TOKEN não definido")
 
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
 
-    logging.info("✅ Bot iniciado. Entrando em polling...")
-    await app.run_polling(close_loop=False)
+    logging.info("Bot iniciado")
+    await app.initialize()
+    await app.start()
+    await app.bot.initialize()
+
+    # 👇 ISSO mantém o processo vivo no Railway
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
