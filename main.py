@@ -1,30 +1,21 @@
 import os
-from telegram import Update
+import asyncio
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
 )
+from telegram import Update
 
-TOKEN = os.getenv("TG_BOT_TOKEN")
+TOKEN = os.getenv("TG_BOT_$moeda_bot")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 Bot ativo!\n\nUse /moeda para testar."
-    )
+    await update.message.reply_text("Bot online 🚀")
 
-async def moeda(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📊 Exemplo de resposta:\nBTC/USDT\nScore: 87/100"
-    )
-
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-
+async def main():
+    app = ApplicationBuilder().$moeda_bot.build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("moeda", moeda))
-
-    app.run_polling()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
