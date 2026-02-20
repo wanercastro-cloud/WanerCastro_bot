@@ -1,19 +1,15 @@
 import os
 import asyncio
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes,
-)
 from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-TOKEN = os.getenv("TG_BOT_$moeda_bot")
+TOKEN = os.getenv("TG_BOT_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Bot online 🚀")
 
 async def main():
-    app = ApplicationBuilder().$moeda_bot.build()
+    app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     await app.run_polling()
 
