@@ -2,6 +2,7 @@ import os
 import math
 import logging
 import requests
+
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -9,54 +10,77 @@ logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("TG_BOT_TOKEN", "").strip()
 
-BYBIT_TICKERS = "https://api.bybit.com/v5/market/tickers"
+BYBIT_TICKERS_URL = "https://api.bybit.com/v5/market/tickers"
+
+
+def safe_float(x, default=0.0) -> float:
+    """Converte string/None/'' para float sem quebrar."""
+    try:
+        if x is None or x == "":
+            return default
+        return float(x)
+    except Exception:
+        return default
+
 
 def bybit_spot_tickers() -> list[dict]:
-    r = requests.get(BYBIT_TICKERS, params={"category": "spot"}, timeout=15)
+    """Lista tickers Spot completos."""
+    r = requests.get(BYBIT_TICKERS_URL, params={"category": "spot"}, timeout=15)
     r.raise_for_status()
     data = r.json()
     if data.get("retCode") != 0:
         raise RuntimeError(f"Bybit retCode != 0: {data}")
     return data["result"]["list"]
 
-def safe_float(x, default=0.0) -> float:
-    try:
-        return float(x)
-    except Exception:
-        return default
+
+def bybit_spot_ticker(symbol: str) -> dict | None:
+    """Ticker Spot de 1 símbolo."""
+    r = requests.get(
+        BYBIT_TICKERS_URL,
+        params={"category": "spot", "symbol": symbol},
+        timeout=10,
+    )
+    r.raise_for_status()
+    data = r.json()
+    if data.get("retCode") != 0:
+        return None
+    lst = data.get("result", {}).get("list", [])
+    return lst[0] if lst else None
+
 
 def premium_score(t: dict) -> float:
     """
-    Score "top premium" = muito volume + spread pequeno.
-    Opcionalmente penaliza volatilidade extrema.
+    Score 'Top Premium Spot' = alta liquidez e spread baixo.
+    Tolerante a campos vazios na API.
     """
-    turnover = safe_float(t.get("turnover24h"))   # volume em moeda de cotação (ex: USDT)
-    bid = safe_float(t.get("bid1Price"))
-    ask = safe_float(t.get("ask1Price"))
-    last = safe_float(t.get("lastPrice"))
-    chg = safe_float(t.get("price24hPcnt"))       # ex: 0.0123 = +1.23%
-
-    if last <= 0 or bid <= 0 or ask <= 0:
+    symbol = t.get("symbol", "")
+    if not symbol.endswith("USDT"):
         return -1e18
 
-    spread = (ask - bid) / last                   # percentual
-    vol_component = math.log10(turnover + 1.0)    # cresce devagar
-    spread_penalty = spread * 800.0               # quanto menor, melhor
-    vol_penalty = abs(chg) * 3.0                  # penaliza “doideira” (opcional)
+    last = safe_float(t.get("lastPrice"))
+    bid = safe_float(t.get("bid1Price"))
+    ask = safe_float(t.get("ask1Price"))
+    turnover = safe_float(t.get("turnover24h"))  # volume 24h na moeda de cotação (ex: USDT)
 
-    return (vol_component * 10.0) - spread_penalty - vol_penalty
+    # Se não tem book (bid/ask) ou preço, descarta
+    if last <= 0 or bid <= 0 or ask <= 0 or ask <= bid:
+        return -1e18
 
-def format_symbol(t: dict) -> str:
-    return t.get("symbol", "?")
+    spread_pct = (ask - bid) / last  # fração
+    # Quanto maior turnover e menor spread, melhor
+    # log ajuda a não explodir com volumes gigantes
+    score = math.log10(turnover + 1.0) / (spread_pct + 1e-6)
+    return score
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖 Bot Bybit online!\n\n"
+        "🤖 Bot Bybit Spot online!\n\n"
         "Comandos:\n"
-        "/price BTCUSDT  (spot)\n"
-        "/topspot        (Top Premium Spot)\n"
-        "/alpha          (status Alpha)\n"
+        "/price BTCUSDT\n"
+        "/topspot"
     )
+
 
 async def price_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -66,25 +90,25 @@ async def price_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     symbol = context.args[0].upper().replace("/", "").strip()
 
     try:
-        r = requests.get(BYBIT_TICKERS, params={"category": "spot", "symbol": symbol}, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-
-        if data.get("retCode") != 0 or not data["result"]["list"]:
+        t = bybit_spot_ticker(symbol)
+        if not t:
             await update.message.reply_text("❌ Par não encontrado na Spot da Bybit.")
             return
 
-        t = data["result"]["list"][0]
-        last = t.get("lastPrice")
-        bid = t.get("bid1Price")
-        ask = t.get("ask1Price")
+        last = safe_float(t.get("lastPrice"))
+        bid = safe_float(t.get("bid1Price"))
+        ask = safe_float(t.get("ask1Price"))
         chg = safe_float(t.get("price24hPcnt")) * 100.0
 
+        # spread pode não existir em alguns tickers, então calcula só se tiver bid/ask
+        spread_pct = ((ask - bid) / last) * 100.0 if last > 0 and bid > 0 and ask > 0 else 0.0
+
         await update.message.reply_text(
-            f"📌 {symbol} (Spot Bybit)\n"
+            f"📌 {symbol} (Bybit Spot)\n"
             f"💰 Last: {last}\n"
             f"🟩 Bid:  {bid}\n"
             f"🟥 Ask:  {ask}\n"
+            f"↔️ Spread: {spread_pct:.4f}%\n"
             f"📈 24h:  {chg:+.2f}%"
         )
 
@@ -92,20 +116,28 @@ async def price_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.exception(e)
         await update.message.reply_text("⚠️ Erro ao consultar a Bybit (Spot).")
 
+
 async def topspot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         tickers = bybit_spot_tickers()
 
-        # Filtra só pares USDT (ajuste se quiser incluir USDC, BRL etc.)
-        usdt = [t for t in tickers if format_symbol(t).endswith("USDT")]
+        # pontua e filtra inválidos
+        scored = []
+        for t in tickers:
+            score = premium_score(t)
+            if score > 0:
+                scored.append((score, t))
 
-        # Ordena por score premium
-        usdt.sort(key=premium_score, reverse=True)
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top = scored[:15]
 
-        top = usdt[:15]
+        if not top:
+            await update.message.reply_text("⚠️ Não encontrei pares Spot premium agora.")
+            return
+
         lines = []
-        for i, t in enumerate(top, start=1):
-            sym = format_symbol(t)
+        for i, (_, t) in enumerate(top, start=1):
+            sym = t.get("symbol", "?")
             last = safe_float(t.get("lastPrice"))
             bid = safe_float(t.get("bid1Price"))
             ask = safe_float(t.get("ask1Price"))
@@ -123,15 +155,6 @@ async def topspot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.exception(e)
         await update.message.reply_text("⚠️ Erro ao montar o Top Premium Spot.")
 
-async def alpha_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🧩 Bybit Alpha:\n"
-        "A Bybit não expõe (publicamente) um endpoint oficial simples para listar todos os tokens Alpha como no Spot.\n"
-        "Dá pra fazer de 2 jeitos:\n"
-        "1) ✅ Lista manual (estável): você me diz quais tokens Alpha quer acompanhar.\n"
-        "2) ⚠️ Scraping da página Alpha (frágil): pode quebrar quando a Bybit mudar o site.\n\n"
-        "Se você me disser qual opção prefere, eu já implemento."
-    )
 
 def main():
     if not TOKEN:
@@ -141,10 +164,10 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("price", price_cmd))
     app.add_handler(CommandHandler("topspot", topspot_cmd))
-    app.add_handler(CommandHandler("alpha", alpha_cmd))
 
-    logging.info("✅ Bot Bybit (Spot) iniciado")
+    logging.info("✅ Bot iniciado (Bybit Spot)")
     app.run_polling(close_loop=False)
+
 
 if __name__ == "__main__":
     main()
