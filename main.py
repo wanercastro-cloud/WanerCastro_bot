@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -13,17 +14,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def main():
     if not TOKEN:
-        raise RuntimeError("TG_BOT_TOKEN não definido")
+        raise RuntimeError("❌ TG_BOT_TOKEN não definido nas Variables do Railway")
 
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
 
-    logging.info("Bot iniciado")
-    await app.initialize()
-    await app.start()
-    await app.bot.initialize()
+    logging.info("✅ Iniciando app (initialize/start)...")
 
-    # 👇 ISSO mantém o processo vivo no Railway
+    # 1) prepara recursos internos
+    await app.initialize()
+
+    # 2) inicia o bot (conecta e começa a receber updates)
+    await app.start()
+
+    logging.info("✅ Bot rodando. Mantendo processo vivo...")
+
+    # 3) mantém o processo vivo para o Railway não derrubar
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
