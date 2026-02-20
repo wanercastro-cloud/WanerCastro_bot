@@ -9,12 +9,10 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("TG_BOT_TOKEN", "").strip()
-
 BYBIT_TICKERS_URL = "https://api.bybit.com/v5/market/tickers"
 
 
 def safe_float(x, default=0.0) -> float:
-    """Converte string/None/'' para float sem quebrar."""
     try:
         if x is None or x == "":
             return default
@@ -24,20 +22,38 @@ def safe_float(x, default=0.0) -> float:
 
 
 def bybit_spot_tickers() -> list[dict]:
-    """Lista tickers Spot completos."""
-    r = requests.get(BYBIT_TICKERS_URL, params={"category": "spot"}, timeout=15)
+    r = requests.get(
+        BYBIT_TICKERS_URL,
+        params={"category": "spot"},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=15,
+    )
     r.raise_for_status()
     data = r.json()
+
+    if not isinstance(data, dict):
+        return []
+
     if data.get("retCode") != 0:
-        raise RuntimeError(f"Bybit retCode != 0: {data}")
-    return data["result"]["list"]
+        logging.error("Bybit retCode != 0: %s", data)
+        return []
+
+    result = data.get("result")
+    if not result or not isinstance(result, dict):
+        return []
+
+    lst = result.get("list")
+    if not lst or not isinstance(lst, list):
+        return []
+
+    return lst
 
 
 def bybit_spot_ticker(symbol: str) -> dict | None:
-    """Ticker Spot de 1 símbolo."""
     r = requests.get(
         BYBIT_TICKERS_URL,
         params={"category": "spot", "symbol": symbol},
+        headers={"User-Agent": "Mozilla/5.0"},
         timeout=10,
     )
     r.raise_for_status()
@@ -49,10 +65,6 @@ def bybit_spot_ticker(symbol: str) -> dict | None:
 
 
 def premium_score(t: dict) -> float:
-    """
-    Score 'Top Premium Spot' = alta liquidez e spread baixo.
-    Tolerante a campos vazios na API.
-    """
     symbol = t.get("symbol", "")
     if not symbol.endswith("USDT"):
         return -1e18
@@ -60,17 +72,18 @@ def premium_score(t: dict) -> float:
     last = safe_float(t.get("lastPrice"))
     bid = safe_float(t.get("bid1Price"))
     ask = safe_float(t.get("ask1Price"))
-    turnover = safe_float(t.get("turnover24h"))  # volume 24h na moeda de cotação (ex: USDT)
+    turnover = safe_float(t.get("turnover24h"))
 
-    # Se não tem book (bid/ask) ou preço, descarta
-    if last <= 0 or bid <= 0 or ask <= 0 or ask <= bid:
+    # descarta ticker incompleto
+    if last <= 0 or bid <= 0 or ask <= 0:
+        return -1e18
+    if ask <= bid:
+        return -1e18
+    if turnover <= 0:
         return -1e18
 
-    spread_pct = (ask - bid) / last  # fração
-    # Quanto maior turnover e menor spread, melhor
-    # log ajuda a não explodir com volumes gigantes
-    score = math.log10(turnover + 1.0) / (spread_pct + 1e-6)
-    return score
+    spread_pct = (ask - bid) / last
+    return math.log10(turnover) / (spread_pct + 1e-6)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -99,8 +112,6 @@ async def price_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bid = safe_float(t.get("bid1Price"))
         ask = safe_float(t.get("ask1Price"))
         chg = safe_float(t.get("price24hPcnt")) * 100.0
-
-        # spread pode não existir em alguns tickers, então calcula só se tiver bid/ask
         spread_pct = ((ask - bid) / last) * 100.0 if last > 0 and bid > 0 and ask > 0 else 0.0
 
         await update.message.reply_text(
@@ -112,8 +123,8 @@ async def price_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📈 24h:  {chg:+.2f}%"
         )
 
-    except Exception as e:
-        logging.exception(e)
+    except Exception:
+        logging.exception("Erro no /price")
         await update.message.reply_text("⚠️ Erro ao consultar a Bybit (Spot).")
 
 
@@ -121,19 +132,25 @@ async def topspot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         tickers = bybit_spot_tickers()
 
-        # pontua e filtra inválidos
+        if not tickers:
+            await update.message.reply_text("⚠️ Bybit não retornou dados agora. Tente novamente.")
+            return
+
         scored = []
         for t in tickers:
-            score = premium_score(t)
-            if score > 0:
-                scored.append((score, t))
+            try:
+                score = premium_score(t)
+                if score > 0:
+                    scored.append((score, t))
+            except Exception:
+                continue
+
+        if not scored:
+            await update.message.reply_text("⚠️ Nenhum par Spot premium disponível agora.")
+            return
 
         scored.sort(key=lambda x: x[0], reverse=True)
         top = scored[:15]
-
-        if not top:
-            await update.message.reply_text("⚠️ Não encontrei pares Spot premium agora.")
-            return
 
         lines = []
         for i, (_, t) in enumerate(top, start=1):
@@ -142,17 +159,16 @@ async def topspot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bid = safe_float(t.get("bid1Price"))
             ask = safe_float(t.get("ask1Price"))
             turnover = safe_float(t.get("turnover24h"))
-            chg = safe_float(t.get("price24hPcnt")) * 100.0
-            spread_pct = ((ask - bid) / last) * 100.0 if last > 0 and bid > 0 and ask > 0 else 0.0
+            spread_pct = ((ask - bid) / last) * 100 if last > 0 else 0.0
 
             lines.append(
-                f"{i:02d}. {sym} | {last:.8g} | spr {spread_pct:.3f}% | 24h {chg:+.2f}% | vol {turnover:,.0f}"
+                f"{i:02d}. {sym} | {last:.8g} | spr {spread_pct:.3f}% | vol {turnover:,.0f}"
             )
 
         await update.message.reply_text("🏆 Top Premium Spot (Bybit)\n" + "\n".join(lines))
 
-    except Exception as e:
-        logging.exception(e)
+    except Exception:
+        logging.exception("Erro no /topspot")
         await update.message.reply_text("⚠️ Erro ao montar o Top Premium Spot.")
 
 
