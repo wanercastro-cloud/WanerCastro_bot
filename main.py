@@ -5,6 +5,7 @@ import requests
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.constants import MAX_MESSAGE_LENGTH
 
 logging.basicConfig(level=logging.INFO)
 
@@ -54,11 +55,6 @@ def bybit_spot_ticker(symbol: str) -> dict | None:
 
 
 def premium_score(t: dict) -> float:
-    """
-    TOP PREMIUM SPOT (Bybit):
-    - maior turnover24h
-    - preço válido
-    """
     symbol = t.get("symbol", "")
     if not symbol.endswith("USDT"):
         return -1e18
@@ -69,7 +65,6 @@ def premium_score(t: dict) -> float:
     if last <= 0 or turnover <= 0:
         return -1e18
 
-    # Score simples, estável e correto para Spot
     return math.log10(turnover)
 
 
@@ -89,66 +84,57 @@ async def price_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     symbol = context.args[0].upper().replace("/", "").strip()
 
-    try:
-        t = bybit_spot_ticker(symbol)
-        if not t:
-            await update.message.reply_text("❌ Par não encontrado na Spot da Bybit.")
-            return
+    t = bybit_spot_ticker(symbol)
+    if not t:
+        await update.message.reply_text("❌ Par não encontrado na Spot da Bybit.")
+        return
 
+    last = safe_float(t.get("lastPrice"))
+    chg = safe_float(t.get("price24hPcnt")) * 100.0
+    turnover = safe_float(t.get("turnover24h"))
+
+    await update.message.reply_text(
+        f"📌 {symbol} (Bybit Spot)\n"
+        f"💰 Preço: {last}\n"
+        f"📈 24h: {chg:+.2f}%\n"
+        f"🔄 Volume 24h: {turnover:,.0f}"
+    )
+
+
+async def topspot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tickers = bybit_spot_tickers()
+    if not tickers:
+        await update.message.reply_text("⚠️ Bybit não retornou dados agora.")
+        return
+
+    scored = []
+    for t in tickers:
+        score = premium_score(t)
+        if score > 0:
+            scored.append((score, t))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    top = scored[:10]  # 🔒 LIMITADO A 10 (SEGURANÇA TELEGRAM)
+
+    lines = []
+    for i, (_, t) in enumerate(top, start=1):
+        sym = t.get("symbol")
         last = safe_float(t.get("lastPrice"))
         chg = safe_float(t.get("price24hPcnt")) * 100.0
         turnover = safe_float(t.get("turnover24h"))
 
-        await update.message.reply_text(
-            f"📌 {symbol} (Bybit Spot)\n"
-            f"💰 Preço: {last}\n"
-            f"📈 24h: {chg:+.2f}%\n"
-            f"🔄 Volume 24h: {turnover:,.0f}"
+        lines.append(
+            f"{i:02d}. {sym} | {last:.8g} | 24h {chg:+.2f}% | vol {turnover:,.0f}"
         )
 
-    except Exception:
-        logging.exception("Erro no /price")
-        await update.message.reply_text("⚠️ Erro ao consultar a Bybit.")
+    message = "🏆 Top Premium Spot (Bybit – Liquidez)\n" + "\n".join(lines)
 
+    # Blindagem final: nunca estoura limite do Telegram
+    if len(message) > MAX_MESSAGE_LENGTH:
+        message = message[: MAX_MESSAGE_LENGTH - 50] + "\n..."
 
-async def topspot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        tickers = bybit_spot_tickers()
-        if not tickers:
-            await update.message.reply_text("⚠️ Bybit não retornou dados agora.")
-            return
-
-        scored = []
-        for t in tickers:
-            score = premium_score(t)
-            if score > 0:
-                scored.append((score, t))
-
-        if not scored:
-            await update.message.reply_text("⚠️ Nenhum par Spot premium agora.")
-            return
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        top = scored[:15]
-
-        lines = []
-        for i, (_, t) in enumerate(top, start=1):
-            sym = t.get("symbol")
-            last = safe_float(t.get("lastPrice"))
-            chg = safe_float(t.get("price24hPcnt")) * 100.0
-            turnover = safe_float(t.get("turnover24h"))
-
-            lines.append(
-                f"{i:02d}. {sym} | {last:.8g} | 24h {chg:+.2f}% | vol {turnover:,.0f}"
-            )
-
-        await update.message.reply_text(
-            "🏆 Top Premium Spot (Bybit – Liquidez)\n" + "\n".join(lines)
-        )
-
-    except Exception:
-        logging.exception("Erro no /topspot")
-        await update.message.reply_text("⚠️ Erro ao montar o Top Premium Spot.")
+    await update.message.reply_text(message)
 
 
 def main():
