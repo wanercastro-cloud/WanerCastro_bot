@@ -5,12 +5,13 @@ import requests
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from telegram.constants import MAX_MESSAGE_LENGTH
 
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("TG_BOT_TOKEN", "").strip()
 BYBIT_TICKERS_URL = "https://api.bybit.com/v5/market/tickers"
+
+TELEGRAM_MAX = 4096  # limite oficial do Telegram
 
 
 def safe_float(x, default=0.0) -> float:
@@ -35,7 +36,8 @@ def bybit_spot_tickers() -> list[dict]:
         return []
 
     result = data.get("result", {})
-    return result.get("list", []) if isinstance(result.get("list"), list) else []
+    lst = result.get("list", [])
+    return lst if isinstance(lst, list) else []
 
 
 def bybit_spot_ticker(symbol: str) -> dict | None:
@@ -114,8 +116,7 @@ async def topspot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             scored.append((score, t))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-
-    top = scored[:10]  # 🔒 LIMITADO A 10 (SEGURANÇA TELEGRAM)
+    top = scored[:10]  # LIMITADO A 10
 
     lines = []
     for i, (_, t) in enumerate(top, start=1):
@@ -130,9 +131,8 @@ async def topspot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = "🏆 Top Premium Spot (Bybit – Liquidez)\n" + "\n".join(lines)
 
-    # Blindagem final: nunca estoura limite do Telegram
-    if len(message) > MAX_MESSAGE_LENGTH:
-        message = message[: MAX_MESSAGE_LENGTH - 50] + "\n..."
+    if len(message) > TELEGRAM_MAX:
+        message = message[: TELEGRAM_MAX - 50] + "\n..."
 
     await update.message.reply_text(message)
 
