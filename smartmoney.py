@@ -1,24 +1,43 @@
-import os, requests, math
+import os
+import math
+import requests
 
-BASE = os.getenv("COINGECKO_BASE_URL", "https://pro-api.coingecko.com/api/v3")
-KEY  = os.getenv("COINGECKO_API_KEY", "")
+BASE = os.getenv("COINGECKO_BASE_URL", "https://pro-api.coingecko.com/api/v3").strip()
+KEY = os.getenv("COINGECKO_API_KEY", "").strip()
 
-STABLES = {"tether", "usd-coin", "dai", "true-usd", "frax", "usdd", "usde"}
+if not KEY:
+    raise RuntimeError("COINGECKO_API_KEY não definido nas variáveis de ambiente do Railway.")
 
-def _cg_get(path, params=None):
-    headers = {"x-cg-pro-api-key": KEY} if KEY else {}
+# Excluir stablecoins óbvias (IDs do CoinGecko)
+STABLE_IDS = {
+    "tether", "usd-coin", "dai", "true-usd", "frax", "usdd", "first-digital-usd", "ethena-usde"
+}
+
+
+def _cg_get(path: str, params: dict | None = None):
+    headers = {"x-cg-pro-api-key": KEY}
     r = requests.get(f"{BASE}{path}", params=params or {}, headers=headers, timeout=25)
     r.raise_for_status()
     return r.json()
 
-def scan_prepump_top3():
+
+def scan_prepump_top3() -> list[dict]:
     """
-    Implementa o seu prompt:
-    - Filtra (mcap 5M–500M; vol24 >= 30% mcap; 24h<=+8%; 1h<=+1.5%)
-    - Score: A,B,C,D,E (proxy via volume/price/ratios)
-    Retorna TOP 3 (lista de dicts).
+    Pré-pump smart money (6–24h):
+    Filtros:
+      - MCAP 5M–500M
+      - Vol24 >= 30% MCAP
+      - 24h <= +8%
+      - 1h  <= +1.5%
+    Score (0–100+) com pesos similares ao prompt:
+      A (volume relativo) alto, mas sem pump
+      B (silêncio: vol alto com preço baixo)
+      C (p24 flat/levemente negativo)
+      D (volume agressivo p/ tamanho)
+      E (sem euforia: p24 < 5 e 1h baixo)
+    Retorna TOP 3.
     """
-    # Markets: retorna mcap, volume, variações
+
     data = _cg_get("/coins/markets", {
         "vs_currency": "usd",
         "order": "volume_desc",
@@ -28,18 +47,22 @@ def scan_prepump_top3():
         "price_change_percentage": "1h,24h"
     })
 
-    candidates = []
+    candidates: list[dict] = []
+
     for c in data:
-        cid = c.get("id","")
-        if cid in STABLES: 
+        cid = (c.get("id") or "").strip()
+        if not cid or cid in STABLE_IDS:
             continue
+
         mcap = c.get("market_cap") or 0
-        vol  = c.get("total_volume") or 0
-        p1h  = c.get("price_change_percentage_1h_in_currency") or 0
-        p24  = c.get("price_change_percentage_24h_in_currency") or 0
+        vol = c.get("total_volume") or 0
+        p1h = c.get("price_change_percentage_1h_in_currency") or 0
+        p24 = c.get("price_change_percentage_24h_in_currency") or 0
 
         # HARD FILTERS
-        if not (5_000_000 <= mcap <= 500_000_000): 
+        if not (5_000_000 <= mcap <= 500_000_000):
+            continue
+        if mcap <= 0 or vol <= 0:
             continue
         if vol < 0.30 * mcap:
             continue
@@ -48,35 +71,41 @@ def scan_prepump_top3():
         if p1h > 1.5:
             continue
 
-        # Sinais (proxies práticos com dados disponíveis)
-        # A: volume relativo (quanto maior vol/mcap, melhor, mas sem pump)
-        rel_vol = vol / mcap if mcap else 0
-        A = min(10, rel_vol * 15)  # ajustável
+        rel_vol = vol / mcap  # 0..∞
 
-        # B: assimetria vol x preço (volume alto com preço baixo/flat)
-        # quanto menor o p1h e p24, mais "silencioso"
-        silence = max(0, 1 - (abs(p1h)/2 + max(p24,0)/10))
-        B = min(10, silence * 10)
+        # A: volume relativo (quanto maior, melhor)
+        A = min(10.0, rel_vol * 15.0)
 
-        # C: “estrutura de acumulação” proxy (p24 levemente negativo/flat é ok)
-        C = 10 if (-6 <= p24 <= 3) else 6 if (-10 <= p24 <= 8) else 0
+        # B: “silêncio”: volume alto com preço ainda contido
+        # penaliza se 1h ou 24h já estiverem “quentes”
+        silence = max(0.0, 1.0 - (abs(p1h) / 2.0 + max(p24, 0.0) / 10.0))
+        B = min(10.0, silence * 10.0)
 
-        # D: volume agressivo p/ tamanho
-        D = min(10, math.log10(max(vol,1)) / 2)  # proxy
+        # C: estrutura “acumulação”: 24h flat/negativo leve favorece
+        if -6.0 <= p24 <= 3.0:
+            C = 10.0
+        elif -10.0 <= p24 <= 8.0:
+            C = 6.0
+        else:
+            C = 0.0
 
-        # E: ausência de euforia (proxy: p24 não muito alto + p1h baixo)
-        E = 10 if (p24 < 5 and abs(p1h) < 0.8) else 6
+        # D: volume agressivo p/ tamanho (proxy log)
+        D = min(10.0, math.log10(max(vol, 1.0)) / 2.0)
 
-        score = (A*3) + (B*2) + (C*2) + (D*2) + (E*1)
+        # E: ausência de euforia (proxy)
+        E = 10.0 if (p24 < 5.0 and abs(p1h) < 0.8) else 6.0
 
+        score = (A * 3.0) + (B * 2.0) + (C * 2.0) + (D * 2.0) + (E * 1.0)
+
+        symbol = (c.get("symbol") or "").upper()
         candidates.append({
-            "symbol": (c.get("symbol","").upper() + "/USDT"),
-            "name": c.get("name",""),
-            "mcap": mcap,
-            "vol24": vol,
-            "p1h": p1h,
-            "p24": p24,
-            "score": score
+            "symbol": f"{symbol}/USDT",
+            "name": c.get("name") or "",
+            "mcap": int(mcap),
+            "vol24": int(vol),
+            "p1h": float(p1h),
+            "p24": float(p24),
+            "score": float(score),
         })
 
     candidates.sort(key=lambda x: x["score"], reverse=True)
