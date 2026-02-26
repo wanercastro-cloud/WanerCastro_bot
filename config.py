@@ -1,45 +1,76 @@
 import os
+from dataclasses import dataclass
+from zoneinfo import ZoneInfo
 
-# Telegram
-TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "").strip()
-ALERT_CHAT_ID = os.getenv("ALERT_CHAT_ID", "").strip()  # opcional (ex: -100123...)
+@dataclass(frozen=True)
+class Settings:
+    tg_bot_token: str
 
-# CoinGecko Pro
-COINGECKO_BASE_URL = os.getenv("COINGECKO_BASE_URL", "https://pro-api.coingecko.com/api/v3").rstrip("/")
-COINGECKO_API_KEY = (
-    os.getenv("COINGECKO_PRO_API_KEY", "").strip()
-    or os.getenv("COINGECKO_API_KEY", "").strip()
-    or os.getenv("COINGECKO_KEY", "").strip()
-)
+    coingecko_base_url: str
+    coingecko_api_key: str
+    vs_currency: str
 
-# Radar params
-VS_CURRENCY = os.getenv("VS_CURRENCY", "usd").strip().lower()
-TOP_N = int(os.getenv("TOP_N", "5"))
-CANDIDATES = int(os.getenv("CANDIDATES", "200"))  # até 250
+    # scanning
+    top_n: int
+    candidates: int
 
-# Filtros de universo
-MIN_MCAP = float(os.getenv("MIN_MCAP", "2000000"))       # 2M
-MAX_MCAP = float(os.getenv("MAX_MCAP", "500000000"))     # 500M
-MIN_VOL24 = float(os.getenv("MIN_VOL24", "1500000"))     # 1.5M
+    # filters
+    min_mcap: float
+    max_mcap: float
+    min_vol24: float
+    exclude_stables: bool
 
-# Anti-bag / overheat
-MAX_1H_P = float(os.getenv("MAX_1H_P", "25"))            # rejeita se 1h > isso
-MAX_24H_P = float(os.getenv("MAX_24H_P", "120"))         # rejeita se 24h > isso
-OVERHEAT_24H = float(os.getenv("OVERHEAT_24H", "35"))    # penaliza no score acima disso
+    # http
+    http_timeout: float
+    http_retries: int
 
-# “Surf continuação” (trailing simples com base no preço)
-TRAIL_PCT = float(os.getenv("TRAIL_PCT", "0.06"))        # 6%
+    # dex (optional)
+    geckoterminal_base_url: str
+    use_dex_signal: bool
 
-# HTTP
-HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "20"))
-HTTP_RETRIES = int(os.getenv("HTTP_RETRIES", "2"))
+    # scheduler
+    tz: ZoneInfo
+    daily_hour: int
+    daily_minute: int
 
-# Stables cutoff
-EXCLUDE_STABLES = os.getenv("EXCLUDE_STABLES", "1").strip() == "1"
-STABLE_SYMBOLS = {
-    "USDT", "USDC", "DAI", "TUSD", "USDE", "FDUSD", "PYUSD",
-    "EUR", "GBP", "JPY", "TRY", "BRL"
-}
+def _env_bool(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip() == "1"
 
-if not TG_BOT_TOKEN:
-    raise RuntimeError("TG_BOT_TOKEN não definido no Railway.")
+def load_settings() -> Settings:
+    tg = os.getenv("TG_BOT_TOKEN", "").strip()
+    if not tg:
+        raise RuntimeError("❌ TG_BOT_TOKEN não definido.")
+
+    base = os.getenv("COINGECKO_BASE_URL", "https://pro-api.coingecko.com/api/v3").rstrip("/")
+    key = (
+        os.getenv("COINGECKO_API_KEY", "").strip()
+        or os.getenv("COINGECKO_PRO_API_KEY", "").strip()
+        or os.getenv("COINGECKO_KEY", "").strip()
+    )
+
+    vs = os.getenv("VS_CURRENCY", "usd").strip().lower()
+
+    return Settings(
+        tg_bot_token=tg,
+        coingecko_base_url=base,
+        coingecko_api_key=key,
+        vs_currency=vs,
+
+        top_n=int(os.getenv("TOP_N", "5")),
+        candidates=int(os.getenv("CANDIDATES", "120")),
+
+        min_mcap=float(os.getenv("MIN_MCAP", "2000000")),
+        max_mcap=float(os.getenv("MAX_MCAP", "250000000")),
+        min_vol24=float(os.getenv("MIN_VOL24", "1500000")),
+        exclude_stables=_env_bool("EXCLUDE_STABLES", "1"),
+
+        http_timeout=float(os.getenv("HTTP_TIMEOUT", "20")),
+        http_retries=int(os.getenv("HTTP_RETRIES", "2")),
+
+        geckoterminal_base_url=os.getenv("GECKOTERMINAL_BASE_URL", "https://api.geckoterminal.com/api/v2").rstrip("/"),
+        use_dex_signal=_env_bool("USE_DEX_SIGNAL", "1"),
+
+        tz=ZoneInfo(os.getenv("TZ", "America/Sao_Paulo")),
+        daily_hour=int(os.getenv("DAILY_HOUR", "21")),
+        daily_minute=int(os.getenv("DAILY_MINUTE", "0")),
+    )
