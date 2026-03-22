@@ -10,7 +10,7 @@ import urllib.parse
 import urllib.error
 from datetime import datetime, timezone
 
-CG_API_KEY = os.getenv(‘CG_API_KEY’, ‘’)
+CG_API_KEY = os.getenv('CG_API_KEY', '')
 CG_API_TIER = os.getenv(‘CG_API_TIER’, ‘demo’).lower()
 MIN_MCAP = float(os.getenv(‘MIN_MCAP’, ‘5000000’))
 MAX_MCAP = float(os.getenv(‘MAX_MCAP’, ‘2000000000’))
