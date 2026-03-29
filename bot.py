@@ -1,8 +1,21 @@
-import sys
-import os
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from __future__ import annotations
+
+import os
+import sys
+import traceback
+from typing import Dict, List
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from telegram import Bot
+
+from coingecko_client import CoinGeckoClient
+from config import SETTINGS
+from indicators import indicator_pack, market_chart_to_hourly_candles
+from performance_tracker import adapt_from_recent_results, close_pick, due_reviews, performance_summary, record_pick
+from scheduler import run_loop
+from strategy import Pick, is_valid_market_row, make_pick
+from utils import fmt_pct, now_tz
 
 import traceback
 from typing import Dict, List
