@@ -1,4 +1,12 @@
-from __future__ import annotations
+if not SETTINGS.telegram_bot_token:
+    raise ValueError("TELEGRAM_BOT_TOKEN não definido")
+
+if not SETTINGS.telegram_chat_id:
+    raise ValueError("TELEGRAM_CHAT_ID não definido")
+
+if not SETTINGS.coingecko_api_key:
+    raise ValueError("COINGECKO_API_KEY não definido")
+    from __future__ import annotations
 
 import os
 import sys
