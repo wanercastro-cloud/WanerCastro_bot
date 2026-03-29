@@ -1,12 +1,4 @@
-if not SETTINGS.telegram_bot_token:
-    raise ValueError("TELEGRAM_BOT_TOKEN não definido")
-
-if not SETTINGS.telegram_chat_id:
-    raise ValueError("TELEGRAM_CHAT_ID não definido")
-
-if not SETTINGS.coingecko_api_key:
-    raise ValueError("COINGECKO_API_KEY não definido")
-    from __future__ import annotations
+from __future__ import annotations
 
 import os
 import sys
@@ -31,6 +23,19 @@ from scheduler import run_loop
 from strategy import Pick, is_valid_market_row, make_pick
 from utils import fmt_pct, now_tz
 
+
+def validate_settings() -> None:
+    if not SETTINGS.telegram_bot_token:
+        raise ValueError("TELEGRAM_BOT_TOKEN não definido")
+
+    if not SETTINGS.telegram_chat_id:
+        raise ValueError("TELEGRAM_CHAT_ID não definido")
+
+    if not SETTINGS.coingecko_api_key:
+        raise ValueError("COINGECKO_API_KEY não definido")
+
+
+validate_settings()
 
 bot = Bot(token=SETTINGS.telegram_bot_token)
 client = CoinGeckoClient()
