@@ -1,5 +1,20 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Virtual env
+venv/
+.env/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Railway / deploy
 .env
-data/*.json
-data/*.sqlite3
+.env.*
