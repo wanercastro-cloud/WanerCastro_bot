@@ -1,17 +1,11 @@
 
 ---
 
-## 6. `.github` (pasta opcional)
-
-Não é necessário para o funcionamento. Se quiser, pode criar um arquivo `.github/workflows/ci.yml` para automação, mas isso fica a seu critério.
-
----
-
 ## ✅ Instruções finais
 
-1. **Copie cada bloco de código** para o respectivo arquivo no seu projeto.
+1. **Copie cada arquivo** para seu projeto (mesma estrutura).
 2. **Instale as dependências** com `pip install -r requirements.txt`.
-3. **Execute** com `python bot.py`.
-4. Se quiser usar Telegram, preencha as variáveis em `config.py` ou como variáveis de ambiente.
+3. **Execute** `python bot.py`.
+4. Para **testar o Telegram**, configure as variáveis em `config.py` ou ambiente e rode `python test_telegram.py`.
 
-Tudo está pronto, corrigido e **copiável** diretamente. O sistema agora está completo e evoluído!
+O bot agora **não depende de Binance ou Bybit** e usa **apenas CoinGecko**. O Telegram foi corrigido com logs detalhados. Se ainda não receber mensagens, verifique o arquivo `crypto_analyzer.log` para erros específicos.
