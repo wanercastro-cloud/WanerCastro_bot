@@ -4,7 +4,6 @@
 import os
 import requests
 
-# Substitua pelos seus valores reais ou use variáveis de ambiente
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "SEU_TOKEN_AQUI")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "SEU_CHAT_ID_AQUI")
 
