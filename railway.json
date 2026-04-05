@@ -1,10 +1,7 @@
 {
-  "build": {
-    "builder": "NIXPACKS"
-  },
+  "$schema": "https://railway.app/railway.schema.json",
   "deploy": {
-    "startCommand": "python main.py",
     "restartPolicyType": "ON_FAILURE",
-    "healthcheckPath": "/"
+    "restartPolicyMaxRetries": 10
   }
 }
