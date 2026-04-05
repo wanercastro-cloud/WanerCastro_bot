@@ -1,29 +1,27 @@
-# config.py
-# Configurações do bot de monitoramento SIREN
+import os
 
-# Parâmetros do ativo e intervalo
-SYMBOL = "SIRENUSDT"
-INTERVAL = "15m"                # 1m, 5m, 15m, 1h, 4h, 1d
-LIMIT = 100                     # número de velas para cálculo
+# ========== VARIÁVEIS DE AMBIENTE (Railway) ==========
+COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Parâmetros dos indicadores
-EMA_SHORT = 7
-EMA_MEDIUM = 14
-EMA_LONG = 28
+# ========== CONFIGURAÇÕES DA MOEDA ==========
+COIN_ID = "siren"            # ID no CoinGecko (ex: bitcoin, ethereum, siren)
+VS_CURRENCY = "usd"          # Moeda de cotação
+
+# ========== TEMPOS ==========
+CHECK_EVERY_SECONDS = 300    # A cada 5 minutos verifica novos dados
+DAYS_TO_FETCH = 100          # Quantos dias de dados históricos buscar (para indicadores)
+
+# ========== PARÂMETROS DOS INDICADORES ==========
 RSI_PERIOD = 14
-RSI_OVERBOUGHT = 75             # limite para sobrecompra
-MACD_FAST = 12
-MACD_SLOW = 26
-MACD_SIGNAL = 9
+SMA_PERIOD = 20
+BB_PERIOD = 20
+BB_STD = 2
 
-# Lógica do alerta (anti falso sinal)
-# Se EMA7 > EMA14 > EMA28 -> tendência explosiva, NÃO gera alerta
-IGNORE_STRONG_TREND = True
+# ========== LIMIARES PARA ALERTAS ==========
+RSI_OVERSOLD = 30
+RSI_OVERBOUGHT = 70
 
-# Controle de execução
-CHECK_EVERY_SECONDS = 300       # 5 minutos
-TELEGRAM_ENABLED = True
-DISCORD_ENABLED = False         # opcional
-
-# URLs
-BINANCE_BASE_URL = "https://api.binance.com/api/v3/klines"
+# ========== LOGGING ==========
+LOG_LEVEL = "INFO"
