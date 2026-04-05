@@ -1,0 +1,43 @@
+name: Monitor Crypto - Sinais Técnicos
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check-signals:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Restaurar cache de último alerta
+        uses: actions/cache@v4
+        id: cache-alerta
+        with:
+          path: last_alerts.json
+          key: last-alerts-${{ github.run_id }}
+          restore-keys: |
+            last-alerts-
+
+      - name: Executar bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+        run: python bot.py
+
+      - name: Salvar cache de último alerta
+        uses: actions/cache@v4
+        with:
+          path: last_alerts.json
+          key: last-alerts-${{ github.run_id }}
