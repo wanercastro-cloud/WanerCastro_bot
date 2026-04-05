@@ -1,0 +1,70 @@
+# config.py
+# Lista de moedas com IDs válidos da CoinGecko
+# Para verificar outros IDs: https://api.coingecko.com/api/v3/coins/list
+
+COINS_TO_MONITOR = [
+    {"id": "bitcoin", "name": "Bitcoin"},
+    {"id": "ethereum", "name": "Ethereum"},
+    {"id": "solana", "name": "Solana"},
+    {"id": "binancecoin", "name": "BNB"},
+    {"id": "ripple", "name": "XRP"},
+    {"id": "cardano", "name": "Cardano"},
+    {"id": "dogecoin", "name": "Dogecoin"},
+    {"id": "polkadot", "name": "Polkadot"},
+    {"id": "chainlink", "name": "Chainlink"},
+    {"id": "litecoin", "name": "Litecoin"},
+    {"id": "avalanche-2", "name": "Avalanche"},
+    {"id": "uniswap", "name": "Uniswap"},
+    {"id": "matic-network", "name": "Polygon"},
+    {"id": "the-open-network", "name": "Toncoin"},          # ID corrigido
+    {"id": "shiba-inu", "name": "Shiba Inu"},
+    {"id": "bitcoin-cash", "name": "Bitcoin Cash"},
+    {"id": "cosmos", "name": "Cosmos"},
+    {"id": "stellar", "name": "Stellar"},                  # ID correto (stellar)
+    {"id": "vechain", "name": "VeChain"},
+    {"id": "algorand", "name": "Algorand"},
+    {"id": "filecoin", "name": "Filecoin"},
+    {"id": "theta-token", "name": "Theta"},
+    {"id": "elrond-erd-2", "name": "MultiversX"},
+    {"id": "aave", "name": "Aave"},
+    {"id": "eos", "name": "EOS"},
+    {"id": "tezos", "name": "Tezos"},
+    {"id": "crypto-com-chain", "name": "Cronos"},
+    {"id": "near", "name": "NEAR"},
+    {"id": "flow", "name": "Flow"},
+    {"id": "the-graph", "name": "The Graph"},
+    {"id": "helium", "name": "Helium"},
+    {"id": "iota", "name": "IOTA"},
+    {"id": "kusama", "name": "Kusama"},
+    {"id": "waves", "name": "Waves"},
+    {"id": "zcash", "name": "Zcash"},
+    {"id": "dash", "name": "Dash"},
+    {"id": "decred", "name": "Decred"},
+    {"id": "nexo", "name": "Nexo"},
+    {"id": "pancakeswap-token", "name": "PancakeSwap"},
+    {"id": "sushi", "name": "SushiSwap"},
+    {"id": "curve-dao-token", "name": "Curve DAO"},
+    {"id": "maker", "name": "Maker"},
+    {"id": "compound-governance-token", "name": "Compound"},
+    {"id": "yearn-finance", "name": "Yearn"},
+    {"id": "1inch", "name": "1inch"},
+    {"id": "gala", "name": "Gala"},
+    {"id": "decentraland", "name": "Decentraland"},
+    {"id": "the-sandbox", "name": "The Sandbox"},
+    {"id": "axie-infinity", "name": "Axie Infinity"},
+]
+
+# Parâmetros dos indicadores
+LOOKBACK_DAYS = 30          # dias de dados históricos para análise
+RSI_PERIOD = 14             # período padrão do RSI
+EMA_SHORT = 7               # EMA de curto prazo
+EMA_LONG = 25               # EMA de longo prazo (não usada diretamente aqui)
+
+# Limiares para sinais (ajuste conforme desejar)
+RSI_LONG_MIN = 55           # RSI mínimo para sinal de LONG
+RSI_SHORT_MAX = 45          # RSI máximo para sinal de SHORT
+MACD_HIST_CONSECUTIVE = 2   # número de velas consecutivas com histograma na mesma direção
+
+# Controle de execução
+ALERT_COOLDOWN_HOURS = 4    # tempo mínimo entre alertas da mesma moeda
+MIN_VOLUME_USD = 5_000_000  # volume mínimo diário (US$) para considerar a moeda
