@@ -1,0 +1,17 @@
+
+---
+
+## 6. `.github` (pasta opcional)
+
+Não é necessário para o funcionamento. Se quiser, pode criar um arquivo `.github/workflows/ci.yml` para automação, mas isso fica a seu critério.
+
+---
+
+## ✅ Instruções finais
+
+1. **Copie cada bloco de código** para o respectivo arquivo no seu projeto.
+2. **Instale as dependências** com `pip install -r requirements.txt`.
+3. **Execute** com `python bot.py`.
+4. Se quiser usar Telegram, preencha as variáveis em `config.py` ou como variáveis de ambiente.
+
+Tudo está pronto, corrigido e **copiável** diretamente. O sistema agora está completo e evoluído!
