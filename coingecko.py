@@ -1,118 +1,52 @@
-import os
-import time
 import requests
+import pandas as pd
 import logging
-from datetime import datetime, timedelta
-from indicators import build_indicator_pack_from_market_chart
-import config
+from config import COINGECKO_API_KEY, VS_CURRENCY
 
 logger = logging.getLogger(__name__)
 
-HEADERS = {}
-if config.COINGECKO_API_KEY:
-    HEADERS["x-cg-pro-api-key"] = config.COINGECKO_API_KEY
-
-BASE_URL = config.COINGECKO_BASE_URL.rstrip("/")
-
-_cache = {}
-_cache_ttl = timedelta(minutes=config.SNAPSHOT_TTL_MINUTES)
-
-def _get(url: str, params: dict, retries=3):
-    for attempt in range(retries):
-        try:
-            r = requests.get(url, headers=HEADERS, params=params, timeout=30)
-            if r.status_code == 429:
-                wait = 60 * (attempt + 1)
-                logger.warning(f"Rate limit atingido. Aguardando {wait}s...")
-                time.sleep(wait)
-                continue
-            r.raise_for_status()
-            return r.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Erro na requisição {url}: {e}")
-            if attempt == retries - 1:
-                return None
-            time.sleep(2 ** attempt)
-    return None
-
-def is_stable_like(symbol: str, name: str) -> bool:
-    s = (symbol or "").lower()
-    n = (name or "").lower()
-    stable_terms = [
-        "usd", "usdt", "usdc", "dai", "busd", "fdusd",
-        "tusd", "usde", "usdd", "pyusd", "gusd", "stable",
-        "dollar", "synthetic usd"
-    ]
-    return any(term in s for term in stable_terms) or any(term in n for term in stable_terms)
-
-def get_candidate_markets():
-    rows = []
-    for page in range(1, config.PAGES + 1):
-        data = _get(
-            f"{BASE_URL}/coins/markets",
-            {
-                "vs_currency": config.VS_CURRENCY,
-                "order": "volume_desc",
-                "per_page": config.PER_PAGE,
-                "page": page,
-                "sparkline": "false",
-                "price_change_percentage": "1h,24h,7d",
-            },
-        )
-        if data is None:
-            continue
-        rows.extend(data)
-
-    out = []
-    for c in rows:
-        symbol = c.get("symbol") or ""
-        name = c.get("name") or ""
-
-        if config.EXCLUDE_STABLES and is_stable_like(symbol, name):
-            continue
-
-        mcap = float(c.get("market_cap") or 0)
-        vol = float(c.get("total_volume") or 0)
-
-        if mcap < config.MIN_MCAP or mcap > config.MAX_MCAP:
-            continue
-        if vol < config.MIN_VOL24:
-            continue
-
-        out.append({
-            'id': c['id'],
-            'symbol': c['symbol'],
-            'name': c['name'],
-            'current_price': c.get('current_price', 0),
-            'price_change_24h': c.get('price_change_percentage_24h', 0),
-            'volume': vol,
-            'market_cap': mcap
-        })
-
-    out.sort(key=lambda x: x['volume'], reverse=True)
-    return out[:config.CANDIDATES]
-
-def get_indicator_pack_for_coin(coin_id: str):
-    now = datetime.now()
-    if coin_id in _cache and (now - _cache[coin_id]['timestamp']) < _cache_ttl:
-        logger.debug(f"Usando cache para {coin_id}")
-        return _cache[coin_id]['data']
-
-    data = _get(
-        f"{BASE_URL}/coins/{coin_id}/market_chart",
-        {
-            "vs_currency": config.VS_CURRENCY,
-            "days": "30",
-            "interval": "hourly",
-        },
-    )
-    if data is None:
-        return None
+def fetch_ohlc(coin_id: str, days: int = 30) -> pd.DataFrame | None:
+    """
+    Busca dados OHLC (Open, High, Low, Close) da CoinGecko.
+    
+    Args:
+        coin_id: ID da moeda (ex: 'siren', 'bitcoin')
+        days: Número de dias (1, 7, 14, 30, 90, 365)
+    
+    Returns:
+        DataFrame com índice timestamp e colunas open, high, low, close.
+        Retorna None em caso de erro.
+    """
+    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc"
+    headers = {
+        "accept": "application/json",
+        "x-cg-demo-api-key": COINGECKO_API_KEY
+    }
+    params = {
+        "vs_currency": VS_CURRENCY,
+        "days": days
+    }
+    
     try:
-        result = build_indicator_pack_from_market_chart(data)
-        if result:
-            _cache[coin_id] = {'data': result, 'timestamp': now}
-        return result
+        response = requests.get(url, headers=headers, params=params, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data:
+            logger.warning(f"Dados vazios para {coin_id} com days={days}")
+            return None
+        
+        df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+        df = df[::-1]  # ordem cronológica (mais antigo -> mais recente)
+        
+        logger.info(f"Obtidos {len(df)} candles para {coin_id}")
+        return df
+    
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Erro na requisição CoinGecko: {e}")
+        return None
     except Exception as e:
-        logger.error(f"Erro ao processar indicadores para {coin_id}: {e}")
+        logger.error(f"Erro inesperado em fetch_ohlc: {e}")
         return None
