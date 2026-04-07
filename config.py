@@ -7,7 +7,7 @@ import os
 # CONFIGURAÇÕES DA API COINGECKO
 # ============================================================
 # ⚠️ COLE SUA API KEY AQUI (entre as aspas)
-COINGECKO_API_KEY = "CG-hde8oM9DqSTH56RQaxdnkbo7"   # <--- EXEMPLO: "CG-xxxxxxxxxxxxxxx"
+headers = {"CG-hde8oM9DqSTH56RQaxdnkbo7": "SUA_KEY"}   # plano Pro/Lite
 
 # Número máximo de moedas a analisar
 COINGECKO_MAX_COINS = 150
