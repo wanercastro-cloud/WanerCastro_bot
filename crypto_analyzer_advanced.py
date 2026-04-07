@@ -1,5 +1,5 @@
 # crypto_analyzer_advanced.py
-# Módulo principal com indicadores implementados manualmente (sem pandas-ta)
+# Módulo principal - Versão com suporte à API Key CoinGecko
 
 import sys
 import logging
@@ -24,106 +24,77 @@ logging.basicConfig(
 logger = logging.getLogger("CryptoAnalyzer")
 
 # ============================================================
-# UTILITÁRIOS - TELEGRAM
+# TELEGRAM
 # ============================================================
 def send_telegram_message(message: str):
-    """Envia mensagem via Telegram com tratamento de erros."""
     if not config.TELEGRAM_ENABLED:
-        logger.debug("Telegram desabilitado. Mensagem não enviada.")
         return
-
     token = config.TELEGRAM_BOT_TOKEN
     chat_id = config.TELEGRAM_CHAT_ID
-
     if not token or not chat_id:
         logger.error("Token ou Chat ID do Telegram não configurados.")
         return
-
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "HTML"
-    }
-
     try:
-        response = requests.post(url, json=payload, timeout=10)
-        response.raise_for_status()
-        logger.info(f"Mensagem Telegram enviada: {message[:50]}...")
+        requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
+        logger.info(f"Mensagem Telegram enviada")
     except Exception as e:
-        logger.error(f"Erro ao enviar mensagem Telegram: {e}")
+        logger.error(f"Erro Telegram: {e}")
 
 # ============================================================
-# INDICADORES TÉCNICOS (IMPLEMENTAÇÃO MANUAL)
+# INDICADORES TÉCNICOS
 # ============================================================
 def calculate_rsi(close: pd.Series, length: int = 14) -> pd.Series:
-    """Relative Strength Index (Wilder, 1978)"""
     delta = close.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=length).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=length).mean()
     rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+    return 100 - (100 / (1 + rs))
 
 def calculate_macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Dict:
-    """MACD (Appel, 2005)"""
     ema_fast = close.ewm(span=fast, adjust=False).mean()
     ema_slow = close.ewm(span=slow, adjust=False).mean()
     macd_line = ema_fast - ema_slow
     signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-    histogram = macd_line - signal_line
-    return {"macd": macd_line, "signal": signal_line, "histogram": histogram}
+    return {"macd": macd_line, "signal": signal_line, "histogram": macd_line - signal_line}
 
 def calculate_ema(close: pd.Series, length: int) -> pd.Series:
-    """Exponential Moving Average"""
     return close.ewm(span=length, adjust=False).mean()
 
 def calculate_adx(high: pd.Series, low: pd.Series, close: pd.Series, length: int = 14) -> pd.Series:
-    """Average Directional Index (Wilder, 1978)"""
     plus_dm = high.diff()
     minus_dm = low.diff()
     plus_dm[plus_dm < 0] = 0
     minus_dm[minus_dm > 0] = 0
     minus_dm = abs(minus_dm)
-    
     tr1 = high - low
     tr2 = abs(high - close.shift())
     tr3 = abs(low - close.shift())
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    
     atr = tr.rolling(window=length).mean()
     plus_di = 100 * (plus_dm.rolling(window=length).mean() / atr)
     minus_di = 100 * (minus_dm.rolling(window=length).mean() / atr)
     dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
-    adx = dx.rolling(window=length).mean()
-    return adx
+    return dx.rolling(window=length).mean()
 
 def calculate_cci(high: pd.Series, low: pd.Series, close: pd.Series, length: int = 20) -> pd.Series:
-    """Commodity Channel Index (Lambert, 1980)"""
     tp = (high + low + close) / 3
     sma = tp.rolling(window=length).mean()
     mad = tp.rolling(window=length).apply(lambda x: np.abs(x - x.mean()).mean())
-    cci = (tp - sma) / (0.015 * mad)
-    return cci
+    return (tp - sma) / (0.015 * mad)
 
 def calculate_bollinger_bands(close: pd.Series, length: int = 20, std: int = 2) -> Dict:
-    """Bollinger Bands (Bollinger, 1980)"""
     sma = close.rolling(window=length).mean()
     std_dev = close.rolling(window=length).std()
-    upper = sma + (std_dev * std)
-    lower = sma - (std_dev * std)
-    return {"upper": upper, "middle": sma, "lower": lower}
+    return {"upper": sma + (std_dev * std), "middle": sma, "lower": sma - (std_dev * std)}
 
 def calculate_stoch(high: pd.Series, low: pd.Series, close: pd.Series, k: int = 14, d: int = 3) -> Dict:
-    """Stochastic Oscillator (Lane, 1980)"""
     lowest_low = low.rolling(window=k).min()
     highest_high = high.rolling(window=k).max()
     stoch_k = 100 * ((close - lowest_low) / (highest_high - lowest_low))
-    stoch_d = stoch_k.rolling(window=d).mean()
-    return {"k": stoch_k, "d": stoch_d}
+    return {"k": stoch_k, "d": stoch_k.rolling(window=d).mean()}
 
 def calculate_obv(close: pd.Series, volume: pd.Series) -> pd.Series:
-    """On-Balance Volume (Granville, 1963)"""
     obv = pd.Series(index=close.index, dtype=float)
     obv.iloc[0] = volume.iloc[0]
     for i in range(1, len(close)):
@@ -136,22 +107,31 @@ def calculate_obv(close: pd.Series, volume: pd.Series) -> pd.Series:
     return obv
 
 def calculate_aroon(high: pd.Series, low: pd.Series, length: int = 25) -> Dict:
-    """Aroon (Chande, 1995)"""
     aroon_up = 100 * (high.rolling(window=length+1).apply(lambda x: x.argmax()) / length)
     aroon_down = 100 * (low.rolling(window=length+1).apply(lambda x: x.argmin()) / length)
     return {"up": aroon_up, "down": aroon_down}
 
 # ============================================================
-# 1. BUSCAR LISTA DE MOEDAS (CoinGecko)
+# 1. BUSCAR LISTA DE MOEDAS (CoinGecko COM API KEY)
 # ============================================================
 def fetch_coin_list() -> pd.DataFrame:
-    headers = {}
-    if config.COINGECKO_API_KEY:
-        headers["x-cg-demo-api-key"] = config.COINGECKO_API_KEY
+    """Busca moedas usando sua API Key CoinGecko"""
+    
+    # Header correto para API Key (funciona com conta free também)
+    headers = {
+        "x-cg-demo-api-key": config.COINGECKO_API_KEY,
+        "Accept": "application/json"
+    }
+    
+    # Verifica se a chave foi configurada
+    if not config.COINGECKO_API_KEY or config.COINGECKO_API_KEY == "SUA_CHAVE_AQUI":
+        logger.error("❌ API Key não configurada! Coloque sua chave no arquivo config.py")
+        logger.info("   Obtenha uma chave gratuita em: https://www.coingecko.com/en/developers/dashboard")
+        return pd.DataFrame()
 
     all_coins = []
     page = 1
-    per_page = 250
+    per_page = 250  # Máximo permitido
     max_coins = config.COINGECKO_MAX_COINS
 
     while len(all_coins) < max_coins:
@@ -162,27 +142,44 @@ def fetch_coin_list() -> pd.DataFrame:
             "per_page": min(per_page, max_coins - len(all_coins)),
             "page": page,
             "sparkline": "false",
-            "price_change_percentage": "1h,24h,7d"
+            "price_change_percentage": "1h,24h,7d"  # Agora funciona com API Key
         }
+        
         try:
-            resp = requests.get(url, headers=headers, params=params, timeout=15)
+            logger.info(f"Buscando página {page} da CoinGecko...")
+            resp = requests.get(url, headers=headers, params=params, timeout=30)
+            
+            if resp.status_code == 429:
+                logger.warning("Rate limit atingido. Aguardando 60 segundos...")
+                time.sleep(60)
+                continue
+                
             resp.raise_for_status()
             data = resp.json()
+            
             if not data:
+                logger.info("Fim da lista de moedas.")
                 break
+                
             all_coins.extend(data)
+            logger.info(f"Página {page}: {len(data)} moedas. Total: {len(all_coins)}")
             page += 1
-            if not config.COINGECKO_API_KEY:
-                time.sleep(2)
+            
+            # Pequena pausa para não sobrecarregar (API Key tem limite maior)
+            time.sleep(0.5)
+            
         except Exception as e:
-            logger.error(f"Erro ao buscar página {page} da CoinGecko: {e}")
+            logger.error(f"Erro na página {page}: {e}")
+            if hasattr(resp, 'text'):
+                logger.error(f"Resposta: {resp.text[:200]}")
             break
 
     if not all_coins:
-        logger.error("Nenhuma moeda encontrada na CoinGecko.")
+        logger.error("Nenhuma moeda encontrada. Verifique sua API Key.")
         return pd.DataFrame()
 
     df = pd.DataFrame(all_coins)
+    logger.info(f"Total bruto: {len(df)} moedas")
 
     # Filtros
     df = df[~df["symbol"].str.lower().isin(config.STABLECOINS_SYMBOLS)]
@@ -201,16 +198,17 @@ def fetch_coin_list() -> pd.DataFrame:
                   "change_1h", "change_24h", "change_7d", "volume_24h"]
     df = df.head(max_coins)
 
-    logger.info(f"Carregadas {len(df)} moedas da CoinGecko após filtros.")
+    logger.info(f"✅ {len(df)} moedas carregadas após filtros.")
     return df
 
 # ============================================================
-# 2. BUSCAR DADOS HISTÓRICOS (CoinGecko)
+# 2. BUSCAR DADOS HISTÓRICOS
 # ============================================================
 def fetch_ohlcv_coingecko(coin_id: str, days: int) -> Optional[pd.DataFrame]:
-    headers = {}
-    if config.COINGECKO_API_KEY:
-        headers["x-cg-demo-api-key"] = config.COINGECKO_API_KEY
+    headers = {
+        "x-cg-demo-api-key": config.COINGECKO_API_KEY,
+        "Accept": "application/json"
+    }
 
     url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
     params = {
@@ -218,13 +216,19 @@ def fetch_ohlcv_coingecko(coin_id: str, days: int) -> Optional[pd.DataFrame]:
         "days": days,
         "interval": "daily"
     }
+    
     try:
-        resp = requests.get(url, headers=headers, params=params, timeout=15)
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        
+        if resp.status_code == 429:
+            logger.warning(f"Rate limit para {coin_id}, aguardando...")
+            time.sleep(60)
+            return fetch_ohlcv_coingecko(coin_id, days)  # Tenta novamente
+            
         resp.raise_for_status()
         data = resp.json()
 
         if "prices" not in data or not data["prices"]:
-            logger.warning(f"Sem dados de preço para {coin_id}")
             return None
 
         df = pd.DataFrame(data["prices"], columns=["timestamp", "close"])
@@ -239,7 +243,7 @@ def fetch_ohlcv_coingecko(coin_id: str, days: int) -> Optional[pd.DataFrame]:
         else:
             df["volume"] = 0
 
-        # Gerar OHLC aproximado
+        # OHLC aproximado
         df["open"] = df["close"].shift(1)
         df["high"] = df["close"].rolling(2).max()
         df["low"] = df["close"].rolling(2).min()
@@ -248,13 +252,13 @@ def fetch_ohlcv_coingecko(coin_id: str, days: int) -> Optional[pd.DataFrame]:
         return df[["open", "high", "low", "close", "volume"]]
 
     except Exception as e:
-        logger.error(f"Erro ao buscar dados históricos para {coin_id}: {e}")
+        logger.error(f"Erro ao buscar dados de {coin_id}: {e}")
         return None
 
 # ============================================================
 # 3. CÁLCULO DE INDICADORES E SCORES
 # ============================================================
-def calculate_indicators_manual(df: pd.DataFrame) -> Dict[str, float]:
+def calculate_indicators(df: pd.DataFrame) -> Dict[str, float]:
     if df is None or len(df) < 50:
         return {}
 
@@ -263,66 +267,48 @@ def calculate_indicators_manual(df: pd.DataFrame) -> Dict[str, float]:
     low = df["low"]
     volume = df["volume"]
 
-    # RSI
     rsi = calculate_rsi(close, 14)
     rsi_val = rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else 50
 
-    # MACD
     macd_data = calculate_macd(close)
     macd_hist = macd_data["histogram"].iloc[-1] if not pd.isna(macd_data["histogram"].iloc[-1]) else 0
 
-    # EMAs
     ema9 = calculate_ema(close, 9)
     ema21 = calculate_ema(close, 21)
     ema9_val = ema9.iloc[-1] if not pd.isna(ema9.iloc[-1]) else close.iloc[-1]
     ema21_val = ema21.iloc[-1] if not pd.isna(ema21.iloc[-1]) else close.iloc[-1]
     preco = close.iloc[-1]
 
-    # ADX
     adx = calculate_adx(high, low, close, 14)
     adx_val = adx.iloc[-1] if not pd.isna(adx.iloc[-1]) else 20
 
-    # CCI
     cci = calculate_cci(high, low, close, 20)
     cci_val = cci.iloc[-1] if not pd.isna(cci.iloc[-1]) else 0
 
-    # Bollinger Bands
     bb = calculate_bollinger_bands(close, 20, 2)
     bb_position = (preco - bb["lower"].iloc[-1]) / (bb["upper"].iloc[-1] - bb["lower"].iloc[-1]) if (bb["upper"].iloc[-1] - bb["lower"].iloc[-1]) != 0 else 0.5
 
-    # Estocástico
     stoch = calculate_stoch(high, low, close, 14, 3)
     stoch_k = stoch["k"].iloc[-1] if not pd.isna(stoch["k"].iloc[-1]) else 50
 
-    # OBV
     obv = calculate_obv(close, volume)
     obv_trend = 1 if len(obv) > 1 and obv.iloc[-1] > obv.iloc[-2] else 0
 
-    # Aroon
     aroon = calculate_aroon(high, low, 25)
     aroon_strength = (aroon["up"].iloc[-1] - aroon["down"].iloc[-1]) / 100 if not pd.isna(aroon["up"].iloc[-1]) else 0
 
-    # Volume ratio
     vol_ma = volume.rolling(20).mean().iloc[-1] if len(volume) >= 20 else volume.iloc[-1]
     volume_ratio = volume.iloc[-1] / vol_ma if vol_ma > 0 else 1.0
 
     return {
-        "rsi": rsi_val,
-        "macd_hist": macd_hist,
-        "price": preco,
-        "ema9": ema9_val,
-        "ema21": ema21_val,
-        "adx": adx_val,
-        "cci": cci_val,
-        "bb_position": bb_position,
-        "stoch_k": stoch_k,
-        "obv_trend": obv_trend,
-        "aroon_strength": aroon_strength,
-        "volume_ratio": volume_ratio
+        "rsi": rsi_val, "macd_hist": macd_hist, "price": preco,
+        "ema9": ema9_val, "ema21": ema21_val, "adx": adx_val, "cci": cci_val,
+        "bb_position": bb_position, "stoch_k": stoch_k, "obv_trend": obv_trend,
+        "aroon_strength": aroon_strength, "volume_ratio": volume_ratio
     }
 
 def compute_score_long(indicators: Dict[str, float]) -> float:
-    weights = config.WEIGHTS_LONG
+    w = config.WEIGHTS_LONG
     if not indicators:
         return 0.0
 
@@ -332,9 +318,7 @@ def compute_score_long(indicators: Dict[str, float]) -> float:
     macd_hist = indicators["macd_hist"]
     score_macd = min(1.0, max(0.0, (macd_hist + 0.5) / 1.0)) if macd_hist > -0.5 else 0.0
 
-    preco = indicators["price"]
-    ema9 = indicators["ema9"]
-    ema21 = indicators["ema21"]
+    preco, ema9, ema21 = indicators["price"], indicators["ema9"], indicators["ema21"]
     if preco > ema9 and ema9 > ema21:
         score_ema = 1.0
     elif preco > ema9:
@@ -364,21 +348,15 @@ def compute_score_long(indicators: Dict[str, float]) -> float:
 
     vol_ratio = indicators["volume_ratio"]
 
-    score = (weights["rsi"] * score_rsi +
-             weights["macd"] * score_macd +
-             weights["ema"] * score_ema +
-             weights["adx"] * score_adx +
-             weights["cci"] * score_cci +
-             weights["bbands"] * score_bb +
-             weights["stoch"] * score_stoch +
-             weights["obv"] * score_obv +
-             weights["aroon"] * score_aroon)
+    score = (w["rsi"] * score_rsi + w["macd"] * score_macd + w["ema"] * score_ema +
+             w["adx"] * score_adx + w["cci"] * score_cci + w["bbands"] * score_bb +
+             w["stoch"] * score_stoch + w["obv"] * score_obv + w["aroon"] * score_aroon)
 
     score = score * (0.9 + min(0.2, vol_ratio * 0.1))
     return round(min(1.0, score), 4)
 
 def compute_score_short(indicators: Dict[str, float]) -> float:
-    weights = config.WEIGHTS_SHORT
+    w = config.WEIGHTS_SHORT
     if not indicators:
         return 0.0
 
@@ -388,9 +366,7 @@ def compute_score_short(indicators: Dict[str, float]) -> float:
     macd_hist = indicators["macd_hist"]
     score_macd = min(1.0, max(0.0, (-macd_hist + 0.5) / 1.0)) if macd_hist < 0.5 else 0.0
 
-    preco = indicators["price"]
-    ema9 = indicators["ema9"]
-    ema21 = indicators["ema21"]
+    preco, ema9, ema21 = indicators["price"], indicators["ema9"], indicators["ema21"]
     if preco < ema9 and ema9 < ema21:
         score_ema = 1.0
     elif preco < ema9:
@@ -420,15 +396,9 @@ def compute_score_short(indicators: Dict[str, float]) -> float:
 
     vol_ratio = indicators["volume_ratio"]
 
-    score = (weights["rsi"] * score_rsi +
-             weights["macd"] * score_macd +
-             weights["ema"] * score_ema +
-             weights["adx"] * score_adx +
-             weights["cci"] * score_cci +
-             weights["bbands"] * score_bb +
-             weights["stoch"] * score_stoch +
-             weights["obv"] * score_obv +
-             weights["aroon"] * score_aroon)
+    score = (w["rsi"] * score_rsi + w["macd"] * score_macd + w["ema"] * score_ema +
+             w["adx"] * score_adx + w["cci"] * score_cci + w["bbands"] * score_bb +
+             w["stoch"] * score_stoch + w["obv"] * score_obv + w["aroon"] * score_aroon)
 
     score = score * (0.9 + min(0.2, vol_ratio * 0.1))
     return round(min(1.0, score), 4)
@@ -447,14 +417,12 @@ def backtest_strategy(df_ohlc: pd.DataFrame) -> Dict:
     signals = []
     for i in range(30, len(test_data)):
         hist = test_data.iloc[:i]
-        ind = calculate_indicators_manual(hist)
+        ind = calculate_indicators(hist)
         if not ind:
             continue
-        score_long = compute_score_long(ind)
-        score_short = compute_score_short(ind)
-        if score_long > 0.7:
+        if compute_score_long(ind) > 0.7:
             signals.append(1)
-        elif score_short > 0.7:
+        elif compute_score_short(ind) > 0.7:
             signals.append(-1)
         else:
             signals.append(0)
@@ -469,27 +437,19 @@ def backtest_strategy(df_ohlc: pd.DataFrame) -> Dict:
         if idx >= len(prices)-1:
             break
         if sig == 1 and position == 0:
-            position = 1
-            entry_price = prices[idx]
+            position, entry_price = 1, prices[idx]
         elif sig == -1 and position == 0:
-            position = -1
-            entry_price = prices[idx]
+            position, entry_price = -1, prices[idx]
         elif sig == 0 and position != 0:
             exit_price = prices[idx]
-            if position == 1:
-                ret = (exit_price - entry_price) / entry_price
-            else:
-                ret = (entry_price - exit_price) / entry_price
+            ret = (exit_price - entry_price) / entry_price if position == 1 else (entry_price - exit_price) / entry_price
             returns.append(ret)
             capital *= (1 + ret)
             position = 0
 
     if position != 0:
         exit_price = prices[-1]
-        if position == 1:
-            ret = (exit_price - entry_price) / entry_price
-        else:
-            ret = (entry_price - exit_price) / entry_price
+        ret = (exit_price - entry_price) / entry_price if position == 1 else (entry_price - exit_price) / entry_price
         returns.append(ret)
         capital *= (1 + ret)
 
@@ -498,7 +458,7 @@ def backtest_strategy(df_ohlc: pd.DataFrame) -> Dict:
     return {"total_return": total_return, "win_rate": win_rate, "trades": len(returns)}
 
 # ============================================================
-# 5. ANÁLISE INDIVIDUAL
+# 5. ANÁLISE PRINCIPAL
 # ============================================================
 def analyze_coin(coin_row: pd.Series) -> Dict:
     coin_id = coin_row["coin_id"]
@@ -509,53 +469,46 @@ def analyze_coin(coin_row: pd.Series) -> Dict:
     df_ohlc = fetch_ohlcv_coingecko(coin_id, days=config.HISTORICAL_DAYS)
 
     if df_ohlc is None:
-        logger.warning(f"Sem dados históricos para {symbol}")
         return None
 
-    indicators = calculate_indicators_manual(df_ohlc)
+    indicators = calculate_indicators(df_ohlc)
     if not indicators:
         return None
 
     score_long = compute_score_long(indicators)
     score_short = compute_score_short(indicators)
-
-    backtest_result = None
-    if config.BACKTEST_ENABLED:
-        backtest_result = backtest_strategy(df_ohlc)
+    backtest_result = backtest_strategy(df_ohlc) if config.BACKTEST_ENABLED else None
 
     return {
-        "symbol": symbol,
-        "name": name,
-        "price": coin_row["price"],
-        "change_1h": coin_row["change_1h"],
-        "change_24h": coin_row["change_24h"],
-        "change_7d": coin_row["change_7d"],
-        "volume_24h": coin_row["volume_24h"],
-        "score_long": score_long,
-        "score_short": score_short,
-        "backtest": backtest_result
+        "symbol": symbol, "name": name, "price": coin_row["price"],
+        "change_1h": coin_row["change_1h"], "change_24h": coin_row["change_24h"],
+        "change_7d": coin_row["change_7d"], "volume_24h": coin_row["volume_24h"],
+        "score_long": score_long, "score_short": score_short, "backtest": backtest_result
     }
 
-# ============================================================
-# 6. FUNÇÃO PRINCIPAL
-# ============================================================
 def main():
-    logger.info("Iniciando análise avançada (apenas CoinGecko - manual indicators)...")
+    logger.info("Iniciando análise avançada (com API Key)...")
+    
+    # Verifica API Key
+    if not config.COINGECKO_API_KEY or config.COINGECKO_API_KEY == "SUA_CHAVE_AQUI":
+        logger.error("❌ Configure sua API Key no arquivo config.py")
+        logger.info("   Obtenha uma chave gratuita em: https://www.coingecko.com/en/developers/dashboard")
+        return
+    
     df_coins = fetch_coin_list()
     if df_coins.empty:
-        logger.error("Nenhuma moeda obtida.")
+        logger.error("Nenhuma moeda obtida. Verifique sua API Key e conexão.")
         return
 
     results = []
     total = len(df_coins)
 
     for idx, row in df_coins.iterrows():
-        logger.info(f"Processando moeda {idx+1}/{total}: {row['symbol'].upper()}")
+        logger.info(f"Progresso: {idx+1}/{total}")
         result = analyze_coin(row)
         if result:
             results.append(result)
-        if not config.COINGECKO_API_KEY:
-            time.sleep(2)
+        time.sleep(0.3)  # Pausa curta
 
     if not results:
         logger.error("Nenhum resultado válido.")
@@ -564,6 +517,7 @@ def main():
     df_long = pd.DataFrame(results).sort_values("score_long", ascending=False)
     df_short = pd.DataFrame(results).sort_values("score_short", ascending=False)
 
+    # Exibir resultados
     print("\n" + "="*80)
     print("📈 TOP 10 PARA LONG (COMPRA) - MAIOR POTENCIAL DE ALTA")
     print("="*80)
@@ -572,7 +526,7 @@ def main():
         print(f"   Score Long: {row['score_long']:.4f} | Preço: ${row['price']:.4f}")
         print(f"   1h: {row['change_1h']:+.2f}% | 24h: {row['change_24h']:+.2f}% | 7d: {row['change_7d']:+.2f}%")
         print(f"   Volume 24h: ${row['volume_24h']:,.0f}")
-        if row.get('backtest') and config.BACKTEST_ENABLED:
+        if row.get('backtest'):
             bt = row['backtest']
             print(f"   Backtest: Retorno {bt['total_return']:.2%} | Win Rate {bt['win_rate']:.1%} | Trades {bt['trades']}")
         print()
@@ -583,18 +537,16 @@ def main():
     for i, row in df_short.head(5).iterrows():
         print(f"{i+1}. {row['symbol']} - {row['name']} (Score Short: {row['score_short']:.4f})")
 
+    # Salvar CSV
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     df_long.to_csv(f"ranking_long_{timestamp}.csv", index=False)
     df_short.to_csv(f"ranking_short_{timestamp}.csv", index=False)
-    logger.info(f"Resultados salvos em ranking_long_{timestamp}.csv e ranking_short_{timestamp}.csv")
+    logger.info(f"Resultados salvos em ranking_long_{timestamp}.csv")
 
-    top_long = df_long.iloc[0] if not df_long.empty else None
-    if top_long is not None and config.TELEGRAM_ENABLED:
-        msg = (f"🚀 <b>SINAL LONG DETECTADO</b>\n"
-               f"Moeda: {top_long['symbol']} - {top_long['name']}\n"
-               f"Score: {top_long['score_long']:.2f}\n"
-               f"Preço: ${top_long['price']:.4f}\n"
-               f"Variação 24h: {top_long['change_24h']:+.2f}%")
+    # Notificação Telegram
+    if config.TELEGRAM_ENABLED and not df_long.empty:
+        top = df_long.iloc[0]
+        msg = f"🚀 <b>SINAL LONG</b>\n{top['symbol']} - {top['name']}\nScore: {top['score_long']:.2f}\nPreço: ${top['price']:.4f}\n24h: {top['change_24h']:+.2f}%"
         send_telegram_message(msg)
 
 if __name__ == "__main__":
