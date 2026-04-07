@@ -56,6 +56,6 @@ MIN_PRICE_USD = 0.01
 # ============================================================
 # TELEGRAM (OPCIONAL)
 # ============================================================
-TELEGRAM_ENABLED = False
+TELEGRAM_ENABLED = True
 TELEGRAM_BOT_TOKEN = os.getenv("8576881325:AAEpzquJWGTHYoDqrACJEY5Xrre3-EGi0oQ", "")
 TELEGRAM_CHAT_ID = os.getenv("7239115382", "")
