@@ -1,5 +1,5 @@
 # crypto_analyzer_advanced.py
-# Módulo principal - Versão com suporte à API Key CoinGecko
+# Versão COMPLETA com suporte à API Key CoinGecko
 
 import sys
 import logging
@@ -22,24 +22,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("CryptoAnalyzer")
-
-# ============================================================
-# TELEGRAM
-# ============================================================
-def send_telegram_message(message: str):
-    if not config.TELEGRAM_ENABLED:
-        return
-    token = config.TELEGRAM_BOT_TOKEN
-    chat_id = config.TELEGRAM_CHAT_ID
-    if not token or not chat_id:
-        logger.error("Token ou Chat ID do Telegram não configurados.")
-        return
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    try:
-        requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
-        logger.info(f"Mensagem Telegram enviada")
-    except Exception as e:
-        logger.error(f"Erro Telegram: {e}")
 
 # ============================================================
 # INDICADORES TÉCNICOS
@@ -112,26 +94,24 @@ def calculate_aroon(high: pd.Series, low: pd.Series, length: int = 25) -> Dict:
     return {"up": aroon_up, "down": aroon_down}
 
 # ============================================================
-# 1. BUSCAR LISTA DE MOEDAS (CoinGecko COM API KEY)
+# 1. BUSCAR LISTA DE MOEDAS (COM API KEY)
 # ============================================================
 def fetch_coin_list() -> pd.DataFrame:
-    """Busca moedas usando sua API Key CoinGecko"""
-    
-    # Header correto para API Key (funciona com conta free também)
+    # Verifica se a chave foi configurada
+    if not config.COINGECKO_API_KEY or config.COINGECKO_API_KEY == "sua_chave_aqui":
+        logger.error("❌ API Key não configurada!")
+        logger.info("   Abra o arquivo config.py e cole sua chave em: COINGECKO_API_KEY = 'sua_chave_aqui'")
+        logger.info("   Obtenha uma chave gratuita em: https://www.coingecko.com/en/developers/dashboard")
+        return pd.DataFrame()
+
     headers = {
         "x-cg-demo-api-key": config.COINGECKO_API_KEY,
         "Accept": "application/json"
     }
-    
-    # Verifica se a chave foi configurada
-    if not config.COINGECKO_API_KEY or config.COINGECKO_API_KEY == "SUA_CHAVE_AQUI":
-        logger.error("❌ API Key não configurada! Coloque sua chave no arquivo config.py")
-        logger.info("   Obtenha uma chave gratuita em: https://www.coingecko.com/en/developers/dashboard")
-        return pd.DataFrame()
 
     all_coins = []
     page = 1
-    per_page = 250  # Máximo permitido
+    per_page = 250
     max_coins = config.COINGECKO_MAX_COINS
 
     while len(all_coins) < max_coins:
@@ -142,15 +122,15 @@ def fetch_coin_list() -> pd.DataFrame:
             "per_page": min(per_page, max_coins - len(all_coins)),
             "page": page,
             "sparkline": "false",
-            "price_change_percentage": "1h,24h,7d"  # Agora funciona com API Key
+            "price_change_percentage": "1h,24h,7d"
         }
         
         try:
-            logger.info(f"Buscando página {page} da CoinGecko...")
+            logger.info(f"Buscando página {page}...")
             resp = requests.get(url, headers=headers, params=params, timeout=30)
             
             if resp.status_code == 429:
-                logger.warning("Rate limit atingido. Aguardando 60 segundos...")
+                logger.warning("Rate limit. Aguardando 60s...")
                 time.sleep(60)
                 continue
                 
@@ -158,29 +138,25 @@ def fetch_coin_list() -> pd.DataFrame:
             data = resp.json()
             
             if not data:
-                logger.info("Fim da lista de moedas.")
                 break
                 
             all_coins.extend(data)
             logger.info(f"Página {page}: {len(data)} moedas. Total: {len(all_coins)}")
             page += 1
-            
-            # Pequena pausa para não sobrecarregar (API Key tem limite maior)
             time.sleep(0.5)
             
         except Exception as e:
             logger.error(f"Erro na página {page}: {e}")
-            if hasattr(resp, 'text'):
+            if 'resp' in locals():
                 logger.error(f"Resposta: {resp.text[:200]}")
             break
 
     if not all_coins:
-        logger.error("Nenhuma moeda encontrada. Verifique sua API Key.")
+        logger.error("Nenhuma moeda encontrada.")
         return pd.DataFrame()
 
     df = pd.DataFrame(all_coins)
-    logger.info(f"Total bruto: {len(df)} moedas")
-
+    
     # Filtros
     df = df[~df["symbol"].str.lower().isin(config.STABLECOINS_SYMBOLS)]
     df = df[~df["name"].str.lower().str.contains("|".join(config.STABLECOINS_NAMES), na=False)]
@@ -223,7 +199,7 @@ def fetch_ohlcv_coingecko(coin_id: str, days: int) -> Optional[pd.DataFrame]:
         if resp.status_code == 429:
             logger.warning(f"Rate limit para {coin_id}, aguardando...")
             time.sleep(60)
-            return fetch_ohlcv_coingecko(coin_id, days)  # Tenta novamente
+            return fetch_ohlcv_coingecko(coin_id, days)
             
         resp.raise_for_status()
         data = resp.json()
@@ -490,8 +466,9 @@ def main():
     logger.info("Iniciando análise avançada (com API Key)...")
     
     # Verifica API Key
-    if not config.COINGECKO_API_KEY or config.COINGECKO_API_KEY == "SUA_CHAVE_AQUI":
+    if not config.COINGECKO_API_KEY or config.COINGECKO_API_KEY == "sua_chave_aqui":
         logger.error("❌ Configure sua API Key no arquivo config.py")
+        logger.info("   Abra o arquivo config.py e cole sua chave em: COINGECKO_API_KEY = 'sua_chave_aqui'")
         logger.info("   Obtenha uma chave gratuita em: https://www.coingecko.com/en/developers/dashboard")
         return
     
@@ -508,7 +485,7 @@ def main():
         result = analyze_coin(row)
         if result:
             results.append(result)
-        time.sleep(0.3)  # Pausa curta
+        time.sleep(0.3)
 
     if not results:
         logger.error("Nenhum resultado válido.")
@@ -542,12 +519,6 @@ def main():
     df_long.to_csv(f"ranking_long_{timestamp}.csv", index=False)
     df_short.to_csv(f"ranking_short_{timestamp}.csv", index=False)
     logger.info(f"Resultados salvos em ranking_long_{timestamp}.csv")
-
-    # Notificação Telegram
-    if config.TELEGRAM_ENABLED and not df_long.empty:
-        top = df_long.iloc[0]
-        msg = f"🚀 <b>SINAL LONG</b>\n{top['symbol']} - {top['name']}\nScore: {top['score_long']:.2f}\nPreço: ${top['price']:.4f}\n24h: {top['change_24h']:+.2f}%"
-        send_telegram_message(msg)
 
 if __name__ == "__main__":
     main()
