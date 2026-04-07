@@ -525,3 +525,17 @@ def main():
 
 if __name__ == "__main__":
     main()
+import requests as req  # já importado no topo
+
+def send_telegram(message: str):
+    if not config.TELEGRAM_ENABLED or not config.TELEGRAM_BOT_TOKEN:
+        return
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
+    try:
+        req.post(url, json={
+            "chat_id": config.TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "HTML"
+        }, timeout=10)
+    except Exception as e:
+        logger.error(f"Erro ao enviar Telegram: {e}")
