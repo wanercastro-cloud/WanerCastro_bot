@@ -4,12 +4,7 @@ import os
 # ============================================================
 # CONFIGURAÇÕES DA API COINGECKO
 # ============================================================
-CG_API_KEY = os.getenv("CG-hde8oM9DqSTH56RQaxdnkbo7", "")  # GitHub Secret: CG_API_KEY
-
-# Header correto para plano Pro/Lite
-COINGECKO_HEADERS = {"x-cg-pro-api-key": CG_API_KEY}
-# Se for plano Demo gratuito, use este em vez do acima:
-# COINGECKO_HEADERS = {"x-cg-demo-api-key": CG_API_KEY}
+COINGECKO_API_KEY = os.getenv("CG-hde8oM9DqSTH56RQaxdnkbo7", "")  # ← LINHA QUE FALTAVA
 
 COINGECKO_MAX_COINS = 150
 COINGECKO_VS_CURRENCY = "usd"
