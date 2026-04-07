@@ -4,7 +4,7 @@ import os
 # ============================================================
 # CONFIGURAÇÕES DA API COINGECKO
 # ============================================================
-COINGECKO_API_KEY = os.getenv("CG-hde8oM9DqSTH56RQaxdnkbo7", "")  # ← LINHA QUE FALTAVA
+COINGECKO_API_KEY = os.getenv("CG-hde8oM9DqSTH56RQaxdnkbo7", "")  # era "CG_API_KEY"
 
 COINGECKO_MAX_COINS = 150
 COINGECKO_VS_CURRENCY = "usd"
@@ -48,5 +48,5 @@ MIN_PRICE_USD = 0.01
 # TELEGRAM
 # ============================================================
 TELEGRAM_ENABLED = True
-TELEGRAM_BOT_TOKEN = os.getenv("8576881325:AAEpzquJWGTHYoDqrACJEY5Xrre3-EGi0oQ", "")  # GitHub Secret
-TELEGRAM_CHAT_ID = os.getenv("7239115382", "")            # GitHub Secret
+TELEGRAM_BOT_TOKEN = os.getenv("8576881325:AAEpzquJWGTHYoDqrACJEY5Xrre3-EGi0oQ", "")       # era "TELEGRAM_BOT_TOKEN"
+TELEGRAM_CHAT_ID = os.getenv("7239115382", "")       # era os.getenv("", "")
