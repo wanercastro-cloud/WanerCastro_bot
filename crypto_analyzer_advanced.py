@@ -24,6 +24,18 @@ logging.basicConfig(
 logger = logging.getLogger("CryptoAnalyzer")
 
 # ============================================================
+# VERIFICAÇÃO DA API KEY
+# ============================================================
+def verificar_api_key():
+    if not config.COINGECKO_API_KEY or config.COINGECKO_API_KEY == "sua_chave_aqui":
+        logger.error("❌ API Key não configurada!")
+        logger.info("   Abra o arquivo config.py e cole sua chave em: COINGECKO_API_KEY = 'sua_chave_aqui'")
+        logger.info("   Obtenha uma chave gratuita em: https://www.coingecko.com/en/developers/dashboard")
+        return False
+    logger.info(f"✅ API Key configurada: {config.COINGECKO_API_KEY[:10]}...")
+    return True
+
+# ============================================================
 # INDICADORES TÉCNICOS
 # ============================================================
 def calculate_rsi(close: pd.Series, length: int = 14) -> pd.Series:
@@ -53,11 +65,11 @@ def calculate_adx(high: pd.Series, low: pd.Series, close: pd.Series, length: int
     tr2 = abs(high - close.shift())
     tr3 = abs(low - close.shift())
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    atr = tr.rolling(window=length).mean()
-    plus_di = 100 * (plus_dm.rolling(window=length).mean() / atr)
-    minus_di = 100 * (minus_dm.rolling(window=length).mean() / atr)
+    atr = tr.rolling(window=14).mean()
+    plus_di = 100 * (plus_dm.rolling(window=14).mean() / atr)
+    minus_di = 100 * (minus_dm.rolling(window=14).mean() / atr)
     dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
-    return dx.rolling(window=length).mean()
+    return dx.rolling(window=14).mean()
 
 def calculate_cci(high: pd.Series, low: pd.Series, close: pd.Series, length: int = 20) -> pd.Series:
     tp = (high + low + close) / 3
@@ -97,13 +109,6 @@ def calculate_aroon(high: pd.Series, low: pd.Series, length: int = 25) -> Dict:
 # 1. BUSCAR LISTA DE MOEDAS (COM API KEY)
 # ============================================================
 def fetch_coin_list() -> pd.DataFrame:
-    # Verifica se a chave foi configurada
-    if not config.COINGECKO_API_KEY or config.COINGECKO_API_KEY == "sua_chave_aqui":
-        logger.error("❌ API Key não configurada!")
-        logger.info("   Abra o arquivo config.py e cole sua chave em: COINGECKO_API_KEY = 'sua_chave_aqui'")
-        logger.info("   Obtenha uma chave gratuita em: https://www.coingecko.com/en/developers/dashboard")
-        return pd.DataFrame()
-
     headers = {
         "x-cg-demo-api-key": config.COINGECKO_API_KEY,
         "Accept": "application/json"
@@ -148,6 +153,7 @@ def fetch_coin_list() -> pd.DataFrame:
         except Exception as e:
             logger.error(f"Erro na página {page}: {e}")
             if 'resp' in locals():
+                logger.error(f"Status: {resp.status_code}")
                 logger.error(f"Resposta: {resp.text[:200]}")
             break
 
@@ -466,10 +472,7 @@ def main():
     logger.info("Iniciando análise avançada (com API Key)...")
     
     # Verifica API Key
-    if not config.COINGECKO_API_KEY or config.COINGECKO_API_KEY == "sua_chave_aqui":
-        logger.error("❌ Configure sua API Key no arquivo config.py")
-        logger.info("   Abra o arquivo config.py e cole sua chave em: COINGECKO_API_KEY = 'sua_chave_aqui'")
-        logger.info("   Obtenha uma chave gratuita em: https://www.coingecko.com/en/developers/dashboard")
+    if not verificar_api_key():
         return
     
     df_coins = fetch_coin_list()
