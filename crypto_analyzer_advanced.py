@@ -1,5 +1,5 @@
 # crypto_analyzer_advanced.py
-# Versão COMPLETA com suporte à API Key CoinGecko
+# Versão FINAL com suporte à API Key CoinGecko
 
 import sys
 import logging
@@ -484,7 +484,7 @@ def main():
     total = len(df_coins)
 
     for idx, row in df_coins.iterrows():
-        logger.info(f"Progresso: {idx+1}/{total}")
+        logger.info(f"Progresso: {idx+1}/{total} - {row['symbol'].upper()}")
         result = analyze_coin(row)
         if result:
             results.append(result)
