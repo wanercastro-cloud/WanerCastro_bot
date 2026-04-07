@@ -10,7 +10,7 @@ import os
 # Para usar a API paga, insira sua chave aqui ou na variável de ambiente
 COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY", "")
 
-# Número máximo de moedas a analisar (recomendado: 100-200 para free tier)
+# Número máximo de moedas a analisar (recomendado: 100-150 para free tier)
 COINGECKO_MAX_COINS = 150
 
 # Moeda de cotação (usd, brl, etc.)
