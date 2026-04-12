@@ -1,5 +1,6 @@
 # crypto_analyzer_advanced.py
 # Versão FINAL com suporte à API Key CoinGecko Pro + Telegram integrado
+# Notificações apenas quando score >= 0.70 (oportunidade real)
 
 import sys
 import logging
@@ -67,47 +68,56 @@ def send_telegram_long(message: str):
 def build_telegram_message(df_long: pd.DataFrame, df_short: pd.DataFrame) -> str:
     now = datetime.now().strftime("%d/%m/%Y %H:%M")
     lines = [
-        f"🤖 <b>Crypto Analyzer — {now}</b>",
-        "",
-        "📈 <b>TOP 10 LONG (maior potencial de alta)</b>",
-        "─────────────────────────────"
+        f"🚨 <b>Crypto Analyzer — Alerta Real — {now}</b>",
+        ""
     ]
 
-    for rank, (_, row) in enumerate(df_long.head(10).iterrows(), start=1):
-        bt = row.get("backtest") or {}
-        bt_str = ""
-        if bt and bt.get("trades", 0) > 0:
-            bt_str = (
-                f"  📊 Backtest: retorno <b>{bt['total_return']:.1%}</b> | "
-                f"win rate <b>{bt['win_rate']:.0%}</b> | {bt['trades']} trades"
+    # LONG
+    lines += [
+        "📈 <b>OPORTUNIDADES LONG (score ≥ 0.70)</b>",
+        "─────────────────────────────"
+    ]
+    if df_long.empty:
+        lines.append("Nenhuma oportunidade de LONG no momento.")
+    else:
+        for rank, (_, row) in enumerate(df_long.iterrows(), start=1):
+            bt = row.get("backtest") or {}
+            bt_str = ""
+            if bt and bt.get("trades", 0) > 0:
+                bt_str = (
+                    f"  📊 Backtest: retorno <b>{bt['total_return']:.1%}</b> | "
+                    f"win rate <b>{bt['win_rate']:.0%}</b> | {bt['trades']} trades"
+                )
+            lines.append(
+                f"{rank}. <b>{row['symbol']}</b> — {row['name']}\n"
+                f"  💰 ${row['price']:.4f} | Score: <b>{row['score_long']:.3f}</b>\n"
+                f"  ⏱ 1h: {_fmt(row['change_1h'])} | "
+                f"24h: {_fmt(row['change_24h'])} | "
+                f"7d: {_fmt(row['change_7d'])}\n"
+                f"  📦 Vol 24h: ${row['volume_24h']:,.0f}"
+                + (f"\n{bt_str}" if bt_str else "")
             )
-
-        lines.append(
-            f"{rank}. <b>{row['symbol']}</b> — {row['name']}\n"
-            f"  💰 ${row['price']:.4f} | Score: <b>{row['score_long']:.3f}</b>\n"
-            f"  ⏱ 1h: {_fmt(row['change_1h'])} | "
-            f"24h: {_fmt(row['change_24h'])} | "
-            f"7d: {_fmt(row['change_7d'])}\n"
-            f"  📦 Vol 24h: ${row['volume_24h']:,.0f}"
-            + (f"\n{bt_str}" if bt_str else "")
-        )
 
     lines += [
         "",
-        "📉 <b>TOP 5 SHORT (maior potencial de queda)</b>",
+        "📉 <b>OPORTUNIDADES SHORT (score ≥ 0.70)</b>",
         "─────────────────────────────"
     ]
 
-    for rank, (_, row) in enumerate(df_short.head(5).iterrows(), start=1):
-        lines.append(
-            f"{rank}. <b>{row['symbol']}</b> — {row['name']}\n"
-            f"  💰 ${row['price']:.4f} | Score Short: <b>{row['score_short']:.3f}</b>\n"
-            f"  ⏱ 1h: {_fmt(row['change_1h'])} | "
-            f"24h: {_fmt(row['change_24h'])} | "
-            f"7d: {_fmt(row['change_7d'])}"
-        )
+    # SHORT
+    if df_short.empty:
+        lines.append("Nenhuma oportunidade de SHORT no momento.")
+    else:
+        for rank, (_, row) in enumerate(df_short.iterrows(), start=1):
+            lines.append(
+                f"{rank}. <b>{row['symbol']}</b> — {row['name']}\n"
+                f"  💰 ${row['price']:.4f} | Score Short: <b>{row['score_short']:.3f}</b>\n"
+                f"  ⏱ 1h: {_fmt(row['change_1h'])} | "
+                f"24h: {_fmt(row['change_24h'])} | "
+                f"7d: {_fmt(row['change_7d'])}"
+            )
 
-    lines += ["", "─────────────────────────────", "🔄 Próxima análise em ~15 min"]
+    lines += ["", "─────────────────────────────", "🔄 Próxima verificação em ~4h"]
     return "\n".join(lines)
 
 def _fmt(value) -> str:
@@ -578,14 +588,14 @@ def main():
         logger.error("Nenhum resultado válido.")
         return
 
-    df_long = pd.DataFrame(results).sort_values("score_long", ascending=False)
-    df_short = pd.DataFrame(results).sort_values("score_short", ascending=False)
+    df_all_long  = pd.DataFrame(results).sort_values("score_long",  ascending=False)
+    df_all_short = pd.DataFrame(results).sort_values("score_short", ascending=False)
 
-    # Exibir no terminal
+    # Exibir ranking completo no terminal (log)
     print("\n" + "="*80)
     print("📈 TOP 10 PARA LONG (COMPRA)")
     print("="*80)
-    for rank, (_, row) in enumerate(df_long.head(10).iterrows(), start=1):
+    for rank, (_, row) in enumerate(df_all_long.head(10).iterrows(), start=1):
         print(f"{rank}. {row['symbol']} - {row['name']}")
         print(f"   Score Long: {row['score_long']:.4f} | Preço: ${row['price']:.4f}")
         print(f"   1h: {row['change_1h']:+.2f}% | 24h: {row['change_24h']:+.2f}% | 7d: {row['change_7d']:+.2f}%")
@@ -598,18 +608,28 @@ def main():
     print("\n" + "="*80)
     print("📉 TOP 5 PARA SHORT (VENDA)")
     print("="*80)
-    for rank, (_, row) in enumerate(df_short.head(5).iterrows(), start=1):
+    for rank, (_, row) in enumerate(df_all_short.head(5).iterrows(), start=1):
         print(f"{rank}. {row['symbol']} - {row['name']} (Score Short: {row['score_short']:.4f})")
 
-    # Enviar ao Telegram
-    msg = build_telegram_message(df_long, df_short)
-    send_telegram_long(msg)
+    # ── FILTRO DE OPORTUNIDADE REAL ──────────────────────────
+    THRESHOLD_LONG  = 0.70
+    THRESHOLD_SHORT = 0.70
 
-    # Salvar CSV
+    top_long  = df_all_long[df_all_long["score_long"]   >= THRESHOLD_LONG].head(10)
+    top_short = df_all_short[df_all_short["score_short"] >= THRESHOLD_SHORT].head(5)
+
+    if top_long.empty and top_short.empty:
+        logger.info("Nenhuma oportunidade acima de 0.70. Telegram não enviado.")
+    else:
+        logger.info(f"Alertas: {len(top_long)} long(s), {len(top_short)} short(s) acima do threshold.")
+        msg = build_telegram_message(top_long, top_short)
+        send_telegram_long(msg)
+
+    # Salvar CSV completo
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    df_long.to_csv(f"ranking_long_{timestamp}.csv", index=False)
-    df_short.to_csv(f"ranking_short_{timestamp}.csv", index=False)
-    logger.info(f"✅ Resultados salvos em ranking_long_{timestamp}.csv")
+    df_all_long.to_csv(f"ranking_long_{timestamp}.csv",   index=False)
+    df_all_short.to_csv(f"ranking_short_{timestamp}.csv", index=False)
+    logger.info(f"✅ CSVs salvos: ranking_long_{timestamp}.csv / ranking_short_{timestamp}.csv")
 
 if __name__ == "__main__":
     main()
