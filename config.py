@@ -4,10 +4,11 @@ import os
 # ============================================================
 # CONFIGURAÇÕES DA API COINGECKO
 # ============================================================
-COINGECKO_API_KEY      = os.environ.get("COINGECKO_API_KEY", "")
-COINGECKO_MAX_COINS    = 150
-COINGECKO_VS_CURRENCY  = "usd"
-HISTORICAL_DAYS        = 90
+COINGECKO_API_KEY = os.getenv("CG-hde8oM9DqSTH56RQaxdnkbo7", "")  # era "CG_API_KEY"
+
+COINGECKO_MAX_COINS = 150
+COINGECKO_VS_CURRENCY = "usd"
+HISTORICAL_DAYS = 90
 
 # ============================================================
 # PESOS DOS INDICADORES
@@ -24,8 +25,8 @@ WEIGHTS_SHORT = {
 # ============================================================
 # BACKTESTING
 # ============================================================
-BACKTEST_ENABLED         = True
-BACKTEST_TEST_DAYS       = 30
+BACKTEST_ENABLED = True
+BACKTEST_TEST_DAYS = 30
 BACKTEST_INITIAL_CAPITAL = 10000
 
 # ============================================================
@@ -41,27 +42,11 @@ STABLECOINS_NAMES = [
     "magic internet money"
 ]
 MIN_VOLUME_USD = 500000
-MIN_PRICE_USD  = 0.01
+MIN_PRICE_USD = 0.01
 
 # ============================================================
 # TELEGRAM
 # ============================================================
 TELEGRAM_ENABLED = True
-TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-
-# ============================================================
-# VALIDAÇÃO NA INICIALIZAÇÃO
-# ============================================================
-def validate():
-    missing = []
-    if not COINGECKO_API_KEY:
-        missing.append("COINGECKO_API_KEY")
-    if not TELEGRAM_TOKEN:
-        missing.append("TELEGRAM_TOKEN")
-    if not TELEGRAM_CHAT_ID:
-        missing.append("TELEGRAM_CHAT_ID")
-    if missing:
-        raise EnvironmentError(
-            f"Variáveis de ambiente ausentes: {', '.join(missing)}"
-        )
+TELEGRAM_BOT_TOKEN = os.getenv("8576881325:AAEpzquJWGTHYoDqrACJEY5Xrre3-EGi0oQ", "")       # era "TELEGRAM_BOT_TOKEN"
+TELEGRAM_CHAT_ID = os.getenv("7239115382", "")       # era os.getenv("", "")
