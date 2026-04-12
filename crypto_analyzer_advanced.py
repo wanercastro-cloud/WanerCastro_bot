@@ -1,5 +1,5 @@
 # crypto_analyzer_advanced.py
-# Versão FINAL com suporte à API Key CoinGecko + Telegram integrado
+# Versão FINAL com suporte à API Key CoinGecko Pro + Telegram integrado
 
 import sys
 import logging
@@ -38,10 +38,10 @@ def verificar_api_key():
 # TELEGRAM
 # ============================================================
 def send_telegram(message: str):
-    if not config.TELEGRAM_ENABLED or not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+    if not config.TELEGRAM_ENABLED or not config.TELEGRAM_TOKEN or not config.TELEGRAM_CHAT_ID:
         logger.warning("Telegram não configurado, pulando envio.")
         return
-    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_TOKEN}/sendMessage"
     try:
         resp = requests.post(url, json={
             "chat_id": config.TELEGRAM_CHAT_ID,
@@ -57,7 +57,7 @@ def send_telegram(message: str):
 
 def send_telegram_long(message: str):
     """Envia mensagens longas em blocos de até 4096 caracteres."""
-    if not config.TELEGRAM_ENABLED or not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+    if not config.TELEGRAM_ENABLED or not config.TELEGRAM_TOKEN or not config.TELEGRAM_CHAT_ID:
         return
     max_len = 4096
     for i in range(0, len(message), max_len):
@@ -194,7 +194,7 @@ def calculate_aroon(high: pd.Series, low: pd.Series, length: int = 25) -> Dict:
 # ============================================================
 def fetch_coin_list() -> pd.DataFrame:
     headers = {
-        "x-cg-demo-api-key": config.COINGECKO_API_KEY,
+        "x-cg-pro-api-key": config.COINGECKO_API_KEY,
         "Accept": "application/json"
     }
 
@@ -204,7 +204,7 @@ def fetch_coin_list() -> pd.DataFrame:
     max_coins = config.COINGECKO_MAX_COINS
 
     while len(all_coins) < max_coins:
-        url = "https://api.coingecko.com/api/v3/coins/markets"
+        url = "https://pro-api.coingecko.com/api/v3/coins/markets"
         params = {
             "vs_currency": config.COINGECKO_VS_CURRENCY,
             "order": "market_cap_desc",
@@ -270,11 +270,11 @@ def fetch_coin_list() -> pd.DataFrame:
 # ============================================================
 def fetch_ohlcv_coingecko(coin_id: str, days: int) -> Optional[pd.DataFrame]:
     headers = {
-        "x-cg-demo-api-key": config.COINGECKO_API_KEY,
+        "x-cg-pro-api-key": config.COINGECKO_API_KEY,
         "Accept": "application/json"
     }
 
-    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
+    url = f"https://pro-api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
     params = {
         "vs_currency": config.COINGECKO_VS_CURRENCY,
         "days": days,
@@ -551,7 +551,7 @@ def analyze_coin(coin_row: pd.Series) -> Dict:
     }
 
 def main():
-    logger.info("Iniciando análise avançada (CoinGecko + Telegram)...")
+    logger.info("Iniciando análise avançada (CoinGecko Pro + Telegram)...")
 
     if not verificar_api_key():
         send_telegram("❌ <b>Crypto Analyzer</b>\nAPI Key da CoinGecko não configurada. Verifique os secrets do GitHub Actions.")
